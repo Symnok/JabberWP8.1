@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using JabberWP.Core;
 using Windows.Security.Credentials;
 using Windows.Storage;
@@ -91,6 +92,89 @@ namespace JabberWP.Services
             Settings.Values.Remove(KEY_PORT);
             Settings.Values.Remove(KEY_RESOURCE);
         }
+
+        #region --Backup and restore--
+        private const string BACKUP_HEADER = "jabberwp-account-backup 1";
+
+        /// <summary>
+        /// Serialises an account to the plain-text backup format.
+        ///
+        /// The password is written IN CLEAR. That is what makes the file usable after
+        /// a reinstall without any key material to carry over, and it is why the file
+        /// is only as safe as wherever the user puts it.
+        /// </summary>
+        public static string exportToText(XmppAccount account)
+        {
+            if (account == null)
+            {
+                return "";
+            }
+
+            StringBuilder builder = new StringBuilder();
+            builder.AppendLine(BACKUP_HEADER);
+            builder.AppendLine("jid=" + (account.Jid ?? ""));
+            builder.AppendLine("password=" + (account.Password ?? ""));
+            builder.AppendLine("host=" + (account.Host ?? ""));
+            builder.AppendLine("port=" + account.Port);
+            builder.AppendLine("resource=" + (account.Resource ?? Xmpp.DEFAULT_RESOURCE));
+            return builder.ToString();
+        }
+
+        /// <summary>
+        /// Parses a backup file. Returns null when the text is not one - a wrong file
+        /// picked by mistake must not half-overwrite the stored account.
+        /// </summary>
+        public static XmppAccount parseBackup(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return null;
+            }
+
+            string[] lines = text.Split(new char[] { '\r', '\n' },
+                StringSplitOptions.RemoveEmptyEntries);
+            if (lines.Length == 0 || lines[0].Trim() != BACKUP_HEADER)
+            {
+                return null;
+            }
+
+            XmppAccount account = new XmppAccount();
+            for (int i = 1; i < lines.Length; i++)
+            {
+                int separator = lines[i].IndexOf('=');
+                if (separator <= 0)
+                {
+                    continue;
+                }
+
+                string key = lines[i].Substring(0, separator).Trim();
+                // Not trimmed: a password may legitimately start or end with a space.
+                string value = lines[i].Substring(separator + 1);
+
+                switch (key)
+                {
+                    case "jid": account.Jid = value.Trim(); break;
+                    case "password": account.Password = value; break;
+                    case "host": account.Host = value.Trim(); break;
+                    case "resource": account.Resource = value.Trim(); break;
+                    case "port":
+                        int port;
+                        if (int.TryParse(value.Trim(), out port) && port > 0)
+                        {
+                            account.Port = port;
+                        }
+                        break;
+                }
+            }
+
+            if (string.IsNullOrEmpty(account.Resource))
+            {
+                account.Resource = Xmpp.DEFAULT_RESOURCE;
+            }
+            return string.IsNullOrEmpty(account.Jid) ? null : account;
+        }
+
+        #endregion
 
         #region --Password vault--
         private static string LoadPassword(string jid)

@@ -56,6 +56,15 @@
                         Margin="0,20,0,0"
                         Click="Connect_Click"/>
 
+                <!-- Restore has to be reachable HERE. After a reinstall this is the
+                     first screen and there is no app bar on it, so the copy on the
+                     account screen cannot be got at without signing in first. -->
+                <Button x:Name="restore_btn"
+                        Content="restore from backup"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,8,0,0"
+                        Click="Restore_Click"/>
+
                 <TextBlock Margin="4,24,0,24"
                            TextWrapping="Wrap"
                            Opacity="0.6"

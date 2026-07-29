@@ -52,8 +52,29 @@
                 <Button x:Name="save_btn"
                         Content="save and reconnect"
                         HorizontalAlignment="Stretch"
-                        Margin="0,20,0,24"
+                        Margin="0,20,0,0"
                         Click="Save_Click"/>
+
+                <TextBlock Text="backup"
+                           FontSize="24"
+                           Margin="0,28,0,0"/>
+                <TextBlock Text="Reinstalling the app deletes the stored account, so keep a copy somewhere off the app - OneDrive or the SD card. The file holds the password in plain text."
+                           FontSize="16"
+                           Opacity="0.6"
+                           TextWrapping="Wrap"
+                           Margin="4,4,0,0"/>
+
+                <Button x:Name="backup_btn"
+                        Content="back up account"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,12,0,0"
+                        Click="Backup_Click"/>
+
+                <Button x:Name="restore_btn"
+                        Content="restore account"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,8,0,24"
+                        Click="Restore_Click"/>
             </StackPanel>
         </ScrollViewer>
     </Grid>

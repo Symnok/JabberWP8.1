@@ -13,7 +13,15 @@
                           Icon="Refresh"
                           Label="reconnect"
                           Click="Reconnect_Click"/>
+            <AppBarButton x:Name="addContact_abb"
+                          Icon="Add"
+                          Label="add contact"
+                          Click="AddContact_Click"/>
             <CommandBar.SecondaryCommands>
+                <!-- Same command as the + icon above. Duplicated on purpose: the
+                     icon carries no label until the bar is expanded, and this menu
+                     is where the other account actions live. -->
+                <AppBarButton Label="add contact" Click="AddContact_Click"/>
                 <AppBarButton Label="account" Click="Account_Click"/>
                 <AppBarButton Label="sign out" Click="SignOut_Click"/>
             </CommandBar.SecondaryCommands>
@@ -22,6 +30,7 @@
 
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -40,8 +49,38 @@
                    TextWrapping="Wrap"
                    Opacity="0.7"/>
 
+        <!-- Pending "may I see your presence?" requests, above the contact list so
+             they are answered rather than lost. -->
+        <ItemsControl x:Name="requests_ic"
+                      Grid.Row="2"
+                      Margin="19,0,19,8"
+                      Visibility="Collapsed">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border Margin="0,0,0,8"
+                            Padding="12,10,12,10"
+                            Background="{ThemeResource PhoneAccentBrush}">
+                        <StackPanel>
+                            <TextBlock Text="{Binding Text}"
+                                       FontSize="20"
+                                       TextWrapping="Wrap"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="accept"
+                                        MinWidth="140"
+                                        Click="AcceptSubscription_Click"/>
+                                <Button Content="decline"
+                                        MinWidth="140"
+                                        Margin="8,0,0,0"
+                                        Click="DeclineSubscription_Click"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
         <ListView x:Name="contacts_lstv"
-                  Grid.Row="2"
+                  Grid.Row="3"
                   Margin="7,0,0,0"
                   SelectionMode="None"
                   IsItemClickEnabled="True"
@@ -110,7 +149,7 @@
           TextBlock hit-tests across its entire layout bounds, not just its glyphs.
         -->
         <TextBlock x:Name="empty_tblck"
-                   Grid.Row="2"
+                   Grid.Row="3"
                    Margin="19,20,19,0"
                    VerticalAlignment="Top"
                    IsHitTestVisible="False"
@@ -118,14 +157,14 @@
                    TextWrapping="Wrap"
                    Opacity="0.6"
                    Visibility="Collapsed"
-                   Text="No contacts yet. The roster arrives from the server just after signing in."/>
+                   Text="No contacts yet. The roster arrives from the server just after signing in. Use + on the bar below to add someone."/>
 
         <!--
           Rename overlay. A panel rather than a dialog: WP8.1 has no dependable
           built-in text-input dialog, and this keeps the interaction on one page.
         -->
         <Grid x:Name="rename_grid"
-              Grid.RowSpan="3"
+              Grid.RowSpan="4"
               Background="#F0000000"
               Visibility="Collapsed">
             <StackPanel VerticalAlignment="Center" Margin="19,0,19,0">
@@ -143,6 +182,35 @@
                 <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
                     <Button Content="save" Click="RenameSave_Click" MinWidth="150"/>
                     <Button Content="cancel" Click="RenameCancel_Click" MinWidth="150"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+
+        <!-- Add contact overlay, same pattern as the rename one. -->
+        <Grid x:Name="addContact_grid"
+              Grid.RowSpan="4"
+              Background="#F0000000"
+              Visibility="Collapsed">
+            <StackPanel VerticalAlignment="Center" Margin="19,0,19,0">
+                <TextBlock Text="add contact" FontSize="24"/>
+                <TextBlock Text="jabber id" FontSize="18" Margin="0,12,0,0" Opacity="0.7"/>
+                <TextBox x:Name="addContact_tbx"
+                         FontSize="22"
+                         InputScope="EmailSmtpAddress"
+                         PlaceholderText="someone@example.com"/>
+                <TextBlock x:Name="addContactError_tblck"
+                           FontSize="18"
+                           Margin="4,10,0,0"
+                           TextWrapping="Wrap"
+                           Visibility="Collapsed"/>
+                <TextBlock Text="They have to accept before you can see whether they are online."
+                           FontSize="16"
+                           Opacity="0.5"
+                           TextWrapping="Wrap"
+                           Margin="4,10,0,0"/>
+                <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+                    <Button Content="add" Click="AddContactSave_Click" MinWidth="150"/>
+                    <Button Content="cancel" Click="AddContactCancel_Click" MinWidth="150"/>
                 </StackPanel>
             </StackPanel>
         </Grid>

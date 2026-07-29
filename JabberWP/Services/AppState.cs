@@ -38,10 +38,18 @@ namespace JabberWP.Services
         private AppState()
         {
             Chats = new ObservableCollection<Chat>();
+            SubscriptionRequests = new ObservableCollection<SubscriptionRequest>();
         }
 
         /// <summary>Contacts, bound directly by the contacts page.</summary>
         public ObservableCollection<Chat> Chats { get; private set; }
+
+        /// <summary>
+        /// Unanswered "may I see your presence?" requests. In memory only: if the
+        /// app closes before the user answers, the server resends the request on the
+        /// next connect, which is where the durable copy lives.
+        /// </summary>
+        public ObservableCollection<SubscriptionRequest> SubscriptionRequests { get; private set; }
 
         public XmppAccount Account { get; private set; }
 
@@ -99,6 +107,7 @@ namespace JabberWP.Services
             _connection.MessageReceived += OnMessageReceived;
             _connection.RosterReceived += OnRosterReceived;
             _connection.PresenceChanged += OnPresenceChanged;
+            _connection.SubscriptionRequested += OnSubscriptionRequested;
             _connection.Closed += OnClosed;
 
             string error = await _connection.ConnectAsync();
@@ -157,6 +166,7 @@ namespace JabberWP.Services
             _connection.MessageReceived -= OnMessageReceived;
             _connection.RosterReceived -= OnRosterReceived;
             _connection.PresenceChanged -= OnPresenceChanged;
+            _connection.SubscriptionRequested -= OnSubscriptionRequested;
             _connection.Closed -= OnClosed;
             _connection = null;
         }
@@ -177,6 +187,59 @@ namespace JabberWP.Services
                 chat.Add(message);
             }
         }
+
+        #region --Subscription requests--
+        /// <summary>
+        /// Accepts a request: the contact may see us, and we ask to see them. Also
+        /// creates the chat so the new contact is immediately usable rather than
+        /// waiting for the server's roster push.
+        /// </summary>
+        public async Task AcceptSubscriptionAsync(SubscriptionRequest request)
+        {
+            if (request == null || _connection == null)
+            {
+                return;
+            }
+
+            SubscriptionRequests.Remove(request);
+            GetOrCreateChat(request.Jid, null);
+            await _connection.AnswerSubscriptionAsync(request.Jid, true, true);
+        }
+
+        public async Task DeclineSubscriptionAsync(SubscriptionRequest request)
+        {
+            if (request == null || _connection == null)
+            {
+                return;
+            }
+
+            SubscriptionRequests.Remove(request);
+            await _connection.AnswerSubscriptionAsync(request.Jid, false, false);
+        }
+
+        /// <summary>
+        /// Adds a contact and asks to see their presence. Returns null on success or
+        /// an error to show.
+        /// </summary>
+        public async Task<string> AddContactAsync(string bareJid)
+        {
+            if (_connection == null || !IsConnected)
+            {
+                return "Not connected.";
+            }
+
+            Jid parsed = Jid.Parse(bareJid);
+            if (parsed == null || string.IsNullOrEmpty(parsed.Local))
+            {
+                return "Enter a full Jabber ID, like someone@example.com.";
+            }
+
+            string jid = parsed.Bare;
+            GetOrCreateChat(jid, null);
+            await _connection.AddContactAsync(jid, null);
+            return null;
+        }
+        #endregion
 
         /// <summary>
         /// Shares a picture: get a slot from the server's XEP-0363 component, PUT the
@@ -340,6 +403,28 @@ namespace JabberWP.Services
                     BY_JID[item.Jid] = chat;
                     Chats.Add(chat);
                 }
+            });
+        }
+
+        private void OnSubscriptionRequested(object sender, string bareJid)
+        {
+            RunOnUi(() =>
+            {
+                if (string.IsNullOrEmpty(bareJid))
+                {
+                    return;
+                }
+
+                // Servers resend outstanding requests on every connect, so the same
+                // one arrives again after each reconnect.
+                foreach (SubscriptionRequest existing in SubscriptionRequests)
+                {
+                    if (string.Equals(existing.Jid, bareJid, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return;
+                    }
+                }
+                SubscriptionRequests.Add(new SubscriptionRequest(bareJid));
             });
         }
 

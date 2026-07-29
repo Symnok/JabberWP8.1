@@ -78,11 +78,6 @@ namespace JabberWP
         {
             base.OnActivated(args);
 
-            if (args.Kind != ActivationKind.PickFileContinuation)
-            {
-                return;
-            }
-
             Frame rootFrame = Window.Current.Content as Frame;
             if (rootFrame == null)
             {
@@ -91,15 +86,49 @@ namespace JabberWP
                 return;
             }
 
-            ChatPage chatPage = rootFrame.Content as ChatPage;
-            FileOpenPickerContinuationEventArgs pickerArgs =
-                args as FileOpenPickerContinuationEventArgs;
-            if (chatPage != null && pickerArgs != null)
+            // Which page gets the result depends on who asked: the chat page picks
+            // pictures to send, the account page picks backup files.
+            if (args.Kind == ActivationKind.PickFileContinuation)
             {
-                chatPage.ContinueFileOpenPicker(pickerArgs);
+                FileOpenPickerContinuationEventArgs openArgs =
+                    args as FileOpenPickerContinuationEventArgs;
+                if (openArgs != null)
+                {
+                    ChatPage chatPage = rootFrame.Content as ChatPage;
+                    if (chatPage != null)
+                    {
+                        chatPage.ContinueFileOpenPicker(openArgs);
+                    }
+
+                    AccountPage accountPage = rootFrame.Content as AccountPage;
+                    if (accountPage != null)
+                    {
+                        accountPage.ContinueFileOpenPicker(openArgs);
+                    }
+
+                    // Restoring a backup starts here after a reinstall, when the
+                    // login page is the only screen there is.
+                    LoginPage loginPage = rootFrame.Content as LoginPage;
+                    if (loginPage != null)
+                    {
+                        loginPage.ContinueFileOpenPicker(openArgs);
+                    }
+                }
+                Window.Current.Activate();
+                return;
             }
 
-            Window.Current.Activate();
+            if (args.Kind == ActivationKind.PickSaveFileContinuation)
+            {
+                FileSavePickerContinuationEventArgs saveArgs =
+                    args as FileSavePickerContinuationEventArgs;
+                AccountPage accountPage = rootFrame.Content as AccountPage;
+                if (accountPage != null && saveArgs != null)
+                {
+                    accountPage.ContinueFileSavePicker(saveArgs);
+                }
+                Window.Current.Activate();
+            }
         }
 #endif
 

@@ -22,6 +22,7 @@ namespace JabberWP.Pages
             InitializeComponent();
             NavigationCacheMode = NavigationCacheMode.Enabled;
             contacts_lstv.ItemsSource = AppState.Instance.Chats;
+            requests_ic.ItemsSource = AppState.Instance.SubscriptionRequests;
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -38,6 +39,7 @@ namespace JabberWP.Pages
             // text has to react to the collection filling rather than being decided
             // once on navigation.
             AppState.Instance.Chats.CollectionChanged += OnChatsChanged;
+            AppState.Instance.SubscriptionRequests.CollectionChanged += OnChatsChanged;
 
             UpdateState();
 
@@ -56,10 +58,12 @@ namespace JabberWP.Pages
             AppState.Instance.StateChanged -= OnStateChanged;
             AppState.Instance.Closed -= OnClosed;
             AppState.Instance.Chats.CollectionChanged -= OnChatsChanged;
+            AppState.Instance.SubscriptionRequests.CollectionChanged -= OnChatsChanged;
 
             // This page is cached (NavigationCacheMode.Enabled), so a half-finished
-            // rename would still be on screen when it is shown again.
+            // rename or add would still be on screen when it is shown again.
             HideRename();
+            HideAddContact();
         }
 
         private void OnChatsChanged(object sender,
@@ -131,7 +135,15 @@ namespace JabberWP.Pages
             empty_tblck.Visibility = AppState.Instance.Chats.Count == 0
                 ? Visibility.Visible
                 : Visibility.Collapsed;
+            requests_ic.Visibility = AppState.Instance.SubscriptionRequests.Count == 0
+                ? Visibility.Collapsed
+                : Visibility.Visible;
             reconnect_abb.IsEnabled = !AppState.Instance.IsConnected;
+
+            // Deliberately NOT disabled while disconnected: a greyed-out app bar
+            // icon is nearly invisible and reads as "the feature is missing".
+            // Adding a contact while offline fails with a message that says why.
+            addContact_abb.IsEnabled = true;
         }
 
         private void Contact_Click(object sender, ItemClickEventArgs e)
@@ -216,6 +228,68 @@ namespace JabberWP.Pages
         {
             await ConnectFromStoreAsync();
         }
+
+        #region --Subscription requests--
+        private async void AcceptSubscription_Click(object sender, RoutedEventArgs e)
+        {
+            SubscriptionRequest request = RequestOf(sender);
+            if (request != null)
+            {
+                await AppState.Instance.AcceptSubscriptionAsync(request);
+            }
+        }
+
+        private async void DeclineSubscription_Click(object sender, RoutedEventArgs e)
+        {
+            SubscriptionRequest request = RequestOf(sender);
+            if (request != null)
+            {
+                await AppState.Instance.DeclineSubscriptionAsync(request);
+            }
+        }
+
+        /// <summary>
+        /// The request a template button belongs to. Buttons inside an ItemTemplate
+        /// inherit the item as their DataContext, which is what identifies the row.
+        /// </summary>
+        private static SubscriptionRequest RequestOf(object sender)
+        {
+            FrameworkElement element = sender as FrameworkElement;
+            return element == null ? null : element.DataContext as SubscriptionRequest;
+        }
+        #endregion
+
+        #region --Add contact--
+        private void AddContact_Click(object sender, RoutedEventArgs e)
+        {
+            addContact_tbx.Text = "";
+            addContactError_tblck.Visibility = Visibility.Collapsed;
+            addContact_grid.Visibility = Visibility.Visible;
+            addContact_tbx.Focus(FocusState.Programmatic);
+        }
+
+        private async void AddContactSave_Click(object sender, RoutedEventArgs e)
+        {
+            string error = await AppState.Instance.AddContactAsync(addContact_tbx.Text.Trim());
+            if (error != null)
+            {
+                addContactError_tblck.Text = error;
+                addContactError_tblck.Visibility = Visibility.Visible;
+                return;
+            }
+            HideAddContact();
+        }
+
+        private void AddContactCancel_Click(object sender, RoutedEventArgs e)
+        {
+            HideAddContact();
+        }
+
+        private void HideAddContact()
+        {
+            addContact_grid.Visibility = Visibility.Collapsed;
+        }
+        #endregion
 
         private void Account_Click(object sender, RoutedEventArgs e)
         {

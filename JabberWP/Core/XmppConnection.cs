@@ -57,6 +57,12 @@ namespace JabberWP.Core
         public event EventHandler<IList<RosterItem>> RosterReceived;
         public event EventHandler<RosterItem> PresenceChanged;
 
+        /// <summary>
+        /// Raised with the bare JID of somebody asking to see our presence. Nothing
+        /// is sent back until the user answers - see AnswerSubscriptionAsync.
+        /// </summary>
+        public event EventHandler<string> SubscriptionRequested;
+
         /// <summary>Raised once when the session ends, with a human-readable reason.</summary>
         public event EventHandler<string> Closed;
         #endregion
@@ -385,6 +391,66 @@ namespace JabberWP.Core
             sent.Id = id;
             return sent;
         }
+
+        #region --Presence subscriptions--
+        /// <summary>
+        /// Answers a subscription request: 'subscribed' lets them see our presence,
+        /// 'unsubscribed' refuses.
+        ///
+        /// When accepting we also ask for THEIR presence, unless we already have it.
+        /// Subscriptions are one-directional in XMPP, so without this second stanza
+        /// the contact would see us online while showing as permanently offline
+        /// themselves - which reads as a bug to everyone who has not read RFC 6121.
+        /// </summary>
+        public async Task AnswerSubscriptionAsync(string bareJid, bool accepted,
+            bool subscribeBack)
+        {
+            if (State != XmppState.Connected || string.IsNullOrEmpty(bareJid))
+            {
+                return;
+            }
+
+            XElement answer = new XElement(Xmpp.CLIENT_NS + "presence",
+                new XAttribute("to", bareJid),
+                new XAttribute("type", accepted ? "subscribed" : "unsubscribed"));
+            await SendAsync(answer);
+
+            if (accepted && subscribeBack)
+            {
+                await RequestSubscriptionAsync(bareJid);
+            }
+        }
+
+        /// <summary>Asks a contact to let us see their presence.</summary>
+        public async Task RequestSubscriptionAsync(string bareJid)
+        {
+            if (State != XmppState.Connected || string.IsNullOrEmpty(bareJid))
+            {
+                return;
+            }
+
+            XElement request = new XElement(Xmpp.CLIENT_NS + "presence",
+                new XAttribute("to", bareJid),
+                new XAttribute("type", "subscribe"));
+            await SendAsync(request);
+        }
+
+        /// <summary>
+        /// Adds a contact: a roster set followed by a subscription request. The
+        /// roster item comes first so the contact has a name and shows up in the
+        /// list even while the request is still unanswered.
+        /// </summary>
+        public async Task AddContactAsync(string bareJid, string name)
+        {
+            if (State != XmppState.Connected || string.IsNullOrEmpty(bareJid))
+            {
+                return;
+            }
+
+            await SetContactNameAsync(bareJid, name);
+            await RequestSubscriptionAsync(bareJid);
+        }
+        #endregion
 
         /// <summary>
         /// Sends an IQ and waits for the reply with the matching id. Null on timeout.
@@ -886,10 +952,18 @@ namespace JabberWP.Core
             }
 
             string type = AttributeOf(stanza, "type");
-            if (type == "subscribe" || type == "subscribed" ||
-                type == "unsubscribe" || type == "unsubscribed" || type == "error")
+            if (type == "subscribe")
             {
-                // Subscription requests need a UI to accept or refuse them.
+                // Somebody wants to see our presence. Answering is a decision only
+                // the user can make, so hand it up and wait.
+                Raise(SubscriptionRequested, from);
+                return;
+            }
+            if (type == "subscribed" || type == "unsubscribe" || type == "unsubscribed" ||
+                type == "error")
+            {
+                // The consequences of these arrive as a roster push, which updates
+                // the contact through the normal path.
                 return;
             }
 

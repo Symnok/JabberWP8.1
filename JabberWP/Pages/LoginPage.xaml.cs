@@ -1,6 +1,9 @@
 ﻿using System;
 using JabberWP.Core;
 using JabberWP.Services;
+using Windows.ApplicationModel.Activation;
+using Windows.Storage;
+using Windows.Storage.Pickers;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Navigation;
@@ -72,6 +75,56 @@ namespace JabberWP.Pages
                 Frame.BackStack.Clear();
             }
         }
+
+        #region --Restore from backup--
+        private void Restore_Click(object sender, RoutedEventArgs e)
+        {
+            FileOpenPicker picker = new FileOpenPicker();
+            picker.ViewMode = PickerViewMode.List;
+            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+            picker.FileTypeFilter.Add(".txt");
+
+            // The picker suspends the app; the flag keeps OnSuspending from doing
+            // its usual teardown while we are mid-flow.
+            AppState.Instance.IsPickingFile = true;
+            picker.PickSingleFileAndContinue();
+        }
+
+        /// <summary>Called by App.OnActivated once the picker returns.</summary>
+        public async void ContinueFileOpenPicker(FileOpenPickerContinuationEventArgs args)
+        {
+            AppState.Instance.IsPickingFile = false;
+
+            if (args == null || args.Files == null || args.Files.Count == 0)
+            {
+                return;                            // cancelled
+            }
+
+            try
+            {
+                string text = await FileIO.ReadTextAsync(args.Files[0]);
+                XmppAccount account = AccountStore.parseBackup(text);
+                if (account == null)
+                {
+                    ShowError("That is not a JabberWP account backup.");
+                    return;
+                }
+
+                // Filled in, not connected: the user presses connect, which is also
+                // what saves the account once the server has accepted it.
+                jid_tbx.Text = account.Jid ?? "";
+                password_pbx.Password = account.Password ?? "";
+                host_tbx.Text = account.Host ?? "";
+                port_tbx.Text = account.Port.ToString();
+
+                ShowError("Restored from " + args.Files[0].Name + ". Press connect.");
+            }
+            catch (Exception ex)
+            {
+                ShowError("Restore failed: " + ex.Message);
+            }
+        }
+        #endregion
 
         private void ShowError(string message)
         {

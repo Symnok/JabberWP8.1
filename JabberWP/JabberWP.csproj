@@ -17,8 +17,18 @@
     <MinimumVisualStudioVersion>12.0</MinimumVisualStudioVersion>
     <FileAlignment>512</FileAlignment>
     <ProjectTypeGuids>{76F1466A-8B6D-4E39-A767-685A06062A39};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
-    <AppxAutoIncrementPackageRevision>False</AppxAutoIncrementPackageRevision>
+    <AppxAutoIncrementPackageRevision>True</AppxAutoIncrementPackageRevision>
     <AppxBundle>Never</AppxBundle>
+    <!--
+      Stable signing identity. Every package must be signed by the SAME certificate
+      or the phone cannot treat a new package as an update of the installed one, and
+      the deployment tool falls back to uninstall-and-install, taking the stored
+      account with it. Do not regenerate this file.
+      Only PackageCertificateKeyFile is set, deliberately: adding
+      PackageCertificateThumbprint would make the build depend on the certificate
+      being in this machine's certificate store as well as on disk.
+    -->
+    <PackageCertificateKeyFile>JabberWP_TemporaryKey.pfx</PackageCertificateKeyFile>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
     <DebugSymbols>true</DebugSymbols>
@@ -88,6 +98,7 @@
     <AppxManifest Include="Package.appxmanifest">
       <SubType>Designer</SubType>
     </AppxManifest>
+    <None Include="JabberWP_TemporaryKey.pfx" />
   </ItemGroup>
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml">
@@ -106,6 +117,7 @@
     <Compile Include="Core\XmppMessage.cs" />
     <Compile Include="Core\XmppStreamParser.cs" />
     <Compile Include="Models\Chat.cs" />
+    <Compile Include="Models\SubscriptionRequest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Services\AccountStore.cs" />
     <Compile Include="Services\AppState.cs" />
