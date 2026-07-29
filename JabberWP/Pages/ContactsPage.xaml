@@ -1,0 +1,150 @@
+﻿<Page
+    x:Class="JabberWP.Pages.ContactsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+
+    <Page.BottomAppBar>
+        <CommandBar>
+            <AppBarButton x:Name="reconnect_abb"
+                          Icon="Refresh"
+                          Label="reconnect"
+                          Click="Reconnect_Click"/>
+            <CommandBar.SecondaryCommands>
+                <AppBarButton Label="account" Click="Account_Click"/>
+                <AppBarButton Label="sign out" Click="SignOut_Click"/>
+            </CommandBar.SecondaryCommands>
+        </CommandBar>
+    </Page.BottomAppBar>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="19,12,19,0">
+            <TextBlock Text="JABBER" Style="{ThemeResource TitleTextBlockStyle}"
+                       Opacity="0.6"/>
+            <TextBlock Text="contacts" FontSize="38" Margin="0,-4,0,0"/>
+        </StackPanel>
+
+        <TextBlock x:Name="state_tblck"
+                   Grid.Row="1"
+                   Margin="19,8,19,8"
+                   FontSize="18"
+                   TextWrapping="Wrap"
+                   Opacity="0.7"/>
+
+        <ListView x:Name="contacts_lstv"
+                  Grid.Row="2"
+                  Margin="7,0,0,0"
+                  SelectionMode="None"
+                  IsItemClickEnabled="True"
+                  ItemClick="Contact_Click">
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <!-- Holding = long press. Background must be non-null or the
+                         gesture is only picked up over the glyphs themselves. -->
+                    <Grid Margin="12,10,12,10"
+                          Background="Transparent"
+                          Holding="Contact_Holding">
+                        <FlyoutBase.AttachedFlyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="rename" Click="Rename_Click"/>
+                            </MenuFlyout>
+                        </FlyoutBase.AttachedFlyout>
+
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Availability dot: green when the contact is reachable. -->
+                        <Ellipse Grid.Column="0"
+                                 Width="14"
+                                 Height="14"
+                                 Margin="0,10,12,0"
+                                 VerticalAlignment="Top"
+                                 Fill="{Binding Presence,
+                                     Converter={StaticResource PresenceToBrush}}"/>
+
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="{Binding Title}"
+                                       FontSize="26"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Subtitle}"
+                                       FontSize="18"
+                                       Opacity="0.6"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding LastMessage}"
+                                       FontSize="18"
+                                       Opacity="0.45"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+
+                        <Border Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Margin="8,0,0,0"
+                                Padding="10,3,10,3"
+                                CornerRadius="12"
+                                Background="{ThemeResource PhoneAccentBrush}"
+                                Visibility="{Binding HasUnread,
+                                    Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="{Binding UnreadText}" FontSize="18"/>
+                        </Border>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <!--
+          Shares row 2 with the list. VerticalAlignment stops it stretching over
+          the whole list, and IsHitTestVisible="False" makes sure it can never eat
+          taps or scroll gestures meant for the contacts underneath - a WinRT
+          TextBlock hit-tests across its entire layout bounds, not just its glyphs.
+        -->
+        <TextBlock x:Name="empty_tblck"
+                   Grid.Row="2"
+                   Margin="19,20,19,0"
+                   VerticalAlignment="Top"
+                   IsHitTestVisible="False"
+                   FontSize="18"
+                   TextWrapping="Wrap"
+                   Opacity="0.6"
+                   Visibility="Collapsed"
+                   Text="No contacts yet. The roster arrives from the server just after signing in."/>
+
+        <!--
+          Rename overlay. A panel rather than a dialog: WP8.1 has no dependable
+          built-in text-input dialog, and this keeps the interaction on one page.
+        -->
+        <Grid x:Name="rename_grid"
+              Grid.RowSpan="3"
+              Background="#F0000000"
+              Visibility="Collapsed">
+            <StackPanel VerticalAlignment="Center" Margin="19,0,19,0">
+                <TextBlock x:Name="renameTarget_tblck"
+                           FontSize="20"
+                           Opacity="0.7"
+                           TextWrapping="Wrap"/>
+                <TextBlock Text="name" FontSize="18" Margin="0,12,0,0" Opacity="0.7"/>
+                <TextBox x:Name="rename_tbx" FontSize="22"/>
+                <TextBlock Text="Leave empty to go back to showing the address."
+                           FontSize="16"
+                           Opacity="0.5"
+                           TextWrapping="Wrap"
+                           Margin="4,6,0,0"/>
+                <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+                    <Button Content="save" Click="RenameSave_Click" MinWidth="150"/>
+                    <Button Content="cancel" Click="RenameCancel_Click" MinWidth="150"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Page>
