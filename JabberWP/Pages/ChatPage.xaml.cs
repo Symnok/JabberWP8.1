@@ -1,58 +1,55 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Collections.Specialized;
 using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Navigation;
 using JabberWP.Core;
 using JabberWP.Models;
 using JabberWP.Services;
-using Windows.ApplicationModel.Activation;
-using Windows.Storage;
-using Windows.Storage.Pickers;
-using Windows.System;
-using Windows.UI.Xaml;
-using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Input;
-using Windows.UI.Xaml.Navigation;
+using Microsoft.Phone.Controls;
+using Microsoft.Phone.Tasks;
 
 namespace JabberWP.Pages
 {
-    public sealed partial class ChatPage : Page
+    public partial class ChatPage : PhoneApplicationPage
     {
         private Chat _chat;
         private bool _sending;
-        private bool _picking;
+        private readonly PhotoChooserTask PHOTO_CHOOSER;
 
         public ChatPage()
         {
             InitializeComponent();
 
-            // ButtonBase marks PointerPressed handled in its class handler, so a
-            // handler attached in XAML is never called. handledEventsToo: true is
-            // the only way to see the press - and the press is what matters here,
-            // because Click arrives after the keyboard has hidden and moved the
-            // button out from under the finger.
-            send_btn.AddHandler(UIElement.PointerPressedEvent,
-                new PointerEventHandler(Send_PointerPressed), true);
-            attach_btn.AddHandler(UIElement.PointerPressedEvent,
-                new PointerEventHandler(Attach_PointerPressed), true);
+            // Choosers must be constructed and wired up in the page's constructor.
+            // The chooser takes the app away and the page may be recreated before the
+            // result comes back, so a handler attached later would never be called.
+            PHOTO_CHOOSER = new PhotoChooserTask();
+            PHOTO_CHOOSER.ShowCamera = true;
+            PHOTO_CHOOSER.Completed += OnPhotoChosen;
         }
 
         protected override void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
 
-            // Coming back from the file picker the app was suspended, and the
-            // parameter is the continuation rather than a JID. Keep the chat we
-            // already had in that case.
-            string jid = e.Parameter as string;
-            if (!string.IsNullOrEmpty(jid))
+            // Arrives either from the contact list or from a toast's navigation URI -
+            // both use the same query parameter.
+            string jid = null;
+            if (NavigationContext.QueryString.ContainsKey(ToastHelper.CHAT_PARAMETER))
             {
-                _chat = AppState.Instance.GetOrCreateChat(jid, null);
+                jid = NavigationContext.QueryString[ToastHelper.CHAT_PARAMETER];
             }
+
+            _chat = AppState.Instance.GetOrCreateChat(jid, null);
             if (_chat == null)
             {
-                if (Frame.CanGoBack)
+                if (NavigationService.CanGoBack)
                 {
-                    Frame.GoBack();
+                    NavigationService.GoBack();
                 }
                 return;
             }
@@ -62,13 +59,12 @@ namespace JabberWP.Pages
 
             name_tblck.Text = _chat.Jid;
             presence_tblck.Text = _chat.PresenceText;
-            messages_lstv.ItemsSource = _chat.Messages;
+            messages_lstb.ItemsSource = _chat.Messages;
 
             _chat.PropertyChanged += OnChatPropertyChanged;
             _chat.Messages.CollectionChanged += OnMessagesChanged;
 
             ScrollToEnd();
-            UpdateSendState();
         }
 
         protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -83,6 +79,28 @@ namespace JabberWP.Pages
             }
         }
 
+        /// <summary>
+        /// Sends BACK to the contact list when this page was opened straight from a
+        /// toast.
+        ///
+        /// A toast navigates directly here, so this page is the bottom of the back
+        /// stack and the default BACK behaviour leaves the app entirely. Going to the
+        /// contact list matches what BACK does when the chat was opened from there.
+        /// ContactsPage clears the back stack on arrival, so this cannot bounce
+        /// between the two pages.
+        /// </summary>
+        protected override void OnBackKeyPress(CancelEventArgs e)
+        {
+            base.OnBackKeyPress(e);
+
+            if (!NavigationService.CanGoBack)
+            {
+                e.Cancel = true;
+                NavigationService.Navigate(
+                    new Uri("/Pages/ContactsPage.xaml", UriKind.Relative));
+            }
+        }
+
         private void OnChatPropertyChanged(object sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName == "PresenceText")
@@ -91,41 +109,22 @@ namespace JabberWP.Pages
             }
         }
 
-        private void OnMessagesChanged(object sender,
-            System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        private void OnMessagesChanged(object sender, NotifyCollectionChangedEventArgs e)
         {
-            // AppState already marshalled this onto the UI thread.
             _chat.Unread = 0;
             ScrollToEnd();
         }
 
-        #region --Sending text--
-        /// <summary>
-        /// The path that normally fires: sends on the press, before the keyboard
-        /// hides and the layout reflows. Deliberately does NOT set e.Handled - the
-        /// button has already handled the event, and suppressing it further would
-        /// only break the pressed visual state.
-        /// </summary>
-        private async void Send_PointerPressed(object sender, PointerRoutedEventArgs e)
-        {
-            await SendAsync();
-        }
-
-        /// <summary>
-        /// Fallback for anything that raises Click without a pointer press (keyboard,
-        /// accessibility). A no-op after the press path already sent, because the
-        /// text box is cleared first.
-        /// </summary>
+        #region --Sending--
         private async void Send_Click(object sender, RoutedEventArgs e)
         {
             await SendAsync();
         }
 
-        private async void Message_KeyUp(object sender, KeyRoutedEventArgs e)
+        private async void Message_KeyUp(object sender, KeyEventArgs e)
         {
-            if (e.Key == VirtualKey.Enter)
+            if (e.Key == Key.Enter)
             {
-                e.Handled = true;
                 await SendAsync();
             }
         }
@@ -159,116 +158,82 @@ namespace JabberWP.Pages
             {
                 _sending = false;
             }
-
-            // Keep the keyboard up and the caret where the user expects it.
-            message_tbx.Focus(FocusState.Programmatic);
         }
         #endregion
 
         #region --Sending a picture--
-        private void Attach_PointerPressed(object sender, PointerRoutedEventArgs e)
+        private void SendPicture_Click(object sender, EventArgs e)
         {
-            StartPick();
-        }
-
-        private void Attach_Click(object sender, RoutedEventArgs e)
-        {
-            StartPick();
-        }
-
-        /// <summary>
-        /// Opens the picker. Guarded because the press and Click paths can both
-        /// arrive, and launching the picker twice would suspend the app twice.
-        /// </summary>
-        private void StartPick()
-        {
-            if (_picking)
-            {
-                return;
-            }
             if (!AppState.Instance.IsConnected)
             {
                 ShowStatus("Not connected.");
                 return;
             }
 
-            _picking = true;
-
-            // Tells the suspend handler to leave the connection alone: launching the
-            // picker suspends the app, and closing the stream there would disconnect
-            // us mid-attach.
-            AppState.Instance.IsPickingFile = true;
-
-            FileOpenPicker picker = new FileOpenPicker();
-            picker.ViewMode = PickerViewMode.Thumbnail;
-            picker.SuggestedStartLocation = PickerLocationId.PicturesLibrary;
-            picker.FileTypeFilter.Add(".jpg");
-            picker.FileTypeFilter.Add(".jpeg");
-            picker.FileTypeFilter.Add(".png");
-            picker.FileTypeFilter.Add(".gif");
-
-            // On the phone there is no PickSingleFileAsync: the app is suspended
-            // while the picker runs and the result comes back through
-            // App.OnActivated, which routes it to ContinueFileOpenPicker below.
-            picker.PickSingleFileAndContinue();
+            try
+            {
+                // ShowCamera lets the user take a new photo from inside the chooser,
+                // so one task covers both the library and the camera.
+                PHOTO_CHOOSER.Show();
+            }
+            catch (Exception ex)
+            {
+                ShowStatus("Could not open the picture chooser: " + ex.Message);
+            }
         }
 
-        /// <summary>
-        /// Called by App.OnActivated once the picker returns.
-        /// </summary>
-        public async void ContinueFileOpenPicker(FileOpenPickerContinuationEventArgs args)
+        private async void OnPhotoChosen(object sender, PhotoResult e)
         {
-            // Released here whatever the outcome, including cancellation, or the
-            // attach button would stay dead and the next real suspend would leave
-            // the stream open.
-            _picking = false;
-            AppState.Instance.IsPickingFile = false;
-
-            if (args == null || args.Files == null || args.Files.Count == 0)
+            if (e == null || e.TaskResult != TaskResult.OK || e.ChosenPhoto == null)
             {
-                return;                            // user cancelled
+                return;                            // cancelled
             }
-
-            StorageFile file = args.Files[0];
             if (_chat == null)
             {
                 return;
             }
 
-            SetBusy(true);
-
-            // Suspension may have killed the socket even though we did not close it
-            // ourselves, so make sure there is a session before asking for a slot.
-            if (!AppState.Instance.IsConnected)
+            string fileName = System.IO.Path.GetFileName(e.OriginalFileName ?? "");
+            if (string.IsNullOrEmpty(fileName))
             {
-                ShowStatus("Reconnecting...");
-                string reconnectError = await AppState.Instance.EnsureConnectedAsync();
-                if (reconnectError != null)
+                // The chooser does not always give a usable name, and the server wants
+                // one for the slot request.
+                fileName = "image.jpg";
+            }
+
+            ShowStatus("Uploading " + fileName + "...");
+            SetBusy(true);
+            try
+            {
+                // The picture chooser returns JPEG regardless of the source.
+                string error = await AppState.Instance.SendImageAsync(
+                    _chat, e.ChosenPhoto, fileName, "image/jpeg");
+
+                if (error != null)
                 {
-                    SetBusy(false);
-                    ShowStatus(reconnectError);
+                    ShowStatus(error);
                     return;
                 }
+
+                HideStatus();
+                ScrollToEnd();
             }
-
-            ShowStatus("Uploading " + file.Name + "...");
-
-            string error = await AppState.Instance.SendImageAsync(_chat, file);
-
-            SetBusy(false);
-            if (error != null)
+            finally
             {
-                ShowStatus(error);
-                return;
+                SetBusy(false);
+                try
+                {
+                    e.ChosenPhoto.Dispose();
+                }
+                catch (Exception)
+                {
+                }
             }
-
-            HideStatus();
-            ScrollToEnd();
         }
         #endregion
 
         /// <summary>Opens the link in a tapped message, if it has one.</summary>
-        private async void Bubble_Tapped(object sender, TappedRoutedEventArgs e)
+        private void Bubble_Tap(object sender, GestureEventArgs e)
         {
             FrameworkElement element = sender as FrameworkElement;
             if (element == null)
@@ -288,22 +253,11 @@ namespace JabberWP.Pages
                 return;
             }
 
-            e.Handled = true;
-            await Launcher.LaunchUriAsync(uri);
-        }
-
-        #region --Small helpers--
-        private void UpdateSendState()
-        {
-            bool connected = AppState.Instance.IsConnected;
-            send_btn.IsEnabled = connected;
-            attach_btn.IsEnabled = connected;
-        }
-
-        private void SetBusy(bool busy)
-        {
-            send_btn.IsEnabled = !busy && AppState.Instance.IsConnected;
-            attach_btn.IsEnabled = !busy && AppState.Instance.IsConnected;
+            // WebBrowserTask rather than Launcher: this is the Silverlight way, and
+            // it does not need the app to be a registered URI handler.
+            WebBrowserTask browser = new WebBrowserTask();
+            browser.Uri = uri;
+            browser.Show();
         }
 
         private void ShowStatus(string message)
@@ -317,14 +271,19 @@ namespace JabberWP.Pages
             status_tblck.Visibility = Visibility.Collapsed;
         }
 
+        private void SetBusy(bool busy)
+        {
+            send_btn.IsEnabled = !busy;
+            message_tbx.IsEnabled = !busy;
+        }
+
         private void ScrollToEnd()
         {
             if (_chat == null || _chat.Messages.Count == 0)
             {
                 return;
             }
-            messages_lstv.ScrollIntoView(_chat.Messages[_chat.Messages.Count - 1]);
+            messages_lstb.ScrollIntoView(_chat.Messages[_chat.Messages.Count - 1]);
         }
-        #endregion
     }
 }

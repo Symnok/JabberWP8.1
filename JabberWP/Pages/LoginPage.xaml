@@ -1,41 +1,39 @@
-﻿<Page
+﻿<phone:PhoneApplicationPage
     x:Class="JabberWP.Pages.LoginPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    xmlns:phone="clr-namespace:Microsoft.Phone.Controls;assembly=Microsoft.Phone"
+    xmlns:shell="clr-namespace:Microsoft.Phone.Shell;assembly=Microsoft.Phone"
+    FontFamily="{StaticResource PhoneFontFamilyNormal}"
+    Foreground="{StaticResource PhoneForegroundBrush}"
+    SupportedOrientations="Portrait"
+    Orientation="Portrait"
+    shell:SystemTray.IsVisible="True">
 
-    <Grid>
+    <Grid x:Name="LayoutRoot" Background="Transparent">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Margin="19,12,19,12">
-            <TextBlock Text="JABBER" Style="{ThemeResource TitleTextBlockStyle}"
-                       Margin="0,0,0,0" Opacity="0.6"/>
-            <TextBlock Text="account" FontSize="34" Margin="0,-4,0,0"/>
+        <StackPanel Grid.Row="0" Margin="12,17,0,12">
+            <TextBlock Text="JABBER" Style="{StaticResource PhoneTextNormalStyle}" Opacity="0.6"/>
+            <TextBlock Text="account" FontSize="42" Margin="9,-7,0,0"/>
         </StackPanel>
 
-        <ScrollViewer Grid.Row="1" Margin="19,0,19,0">
+        <ScrollViewer Grid.Row="1" Margin="12,0,12,0">
             <StackPanel>
-                <TextBlock Text="jabber id" Style="{StaticResource FieldLabelStyle}"/>
-                <TextBox x:Name="jid_tbx"
-                         FontSize="22"
-                         InputScope="EmailSmtpAddress"
-                         PlaceholderText="you@example.com"/>
+                <TextBlock Text="jabber id" FontSize="18" Margin="4,12,0,0" Opacity="0.7"/>
+                <TextBox x:Name="jid_tbx" FontSize="22" InputScope="EmailSmtpAddress"/>
 
-                <TextBlock Text="password" Style="{StaticResource FieldLabelStyle}"/>
+                <TextBlock Text="password" FontSize="18" Margin="4,12,0,0" Opacity="0.7"/>
                 <PasswordBox x:Name="password_pbx" FontSize="22"/>
 
                 <TextBlock Text="server (leave empty to use the domain)"
-                           Style="{StaticResource FieldLabelStyle}"
-                           TextWrapping="Wrap"/>
+                           FontSize="18" Margin="4,12,0,0" Opacity="0.7" TextWrapping="Wrap"/>
                 <TextBox x:Name="host_tbx" FontSize="22" InputScope="Url"/>
 
-                <TextBlock Text="port" Style="{StaticResource FieldLabelStyle}"/>
+                <TextBlock Text="port" FontSize="18" Margin="4,12,0,0" Opacity="0.7"/>
                 <TextBox x:Name="port_tbx" FontSize="22" InputScope="Number" Text="5222"/>
 
                 <TextBlock x:Name="error_tblck"
@@ -43,33 +41,18 @@
                            FontSize="18"
                            TextWrapping="Wrap"
                            Visibility="Collapsed"
-                           Foreground="{ThemeResource PhoneAccentBrush}"/>
+                           Foreground="{StaticResource PhoneAccentBrush}"/>
 
-                <ProgressBar x:Name="busy_pgb"
-                             Margin="0,16,0,0"
-                             IsIndeterminate="True"
-                             Visibility="Collapsed"/>
+                <ProgressBar x:Name="busy_pgb" Margin="0,16,0,0"
+                             IsIndeterminate="True" Visibility="Collapsed"/>
 
-                <Button x:Name="connect_btn"
-                        Content="connect"
-                        HorizontalAlignment="Stretch"
-                        Margin="0,20,0,0"
+                <Button x:Name="connect_btn" Content="connect"
+                        HorizontalAlignment="Stretch" Margin="0,20,0,0"
                         Click="Connect_Click"/>
 
-                <!-- Restore has to be reachable HERE. After a reinstall this is the
-                     first screen and there is no app bar on it, so the copy on the
-                     account screen cannot be got at without signing in first. -->
-                <Button x:Name="restore_btn"
-                        Content="restore from backup"
-                        HorizontalAlignment="Stretch"
-                        Margin="0,8,0,0"
-                        Click="Restore_Click"/>
-
-                <TextBlock Margin="4,24,0,24"
-                           TextWrapping="Wrap"
-                           Opacity="0.6"
+                <TextBlock Margin="4,24,0,24" TextWrapping="Wrap" FontSize="16" Opacity="0.6"
                            Text="The connection uses STARTTLS and SASL PLAIN. Messages are not encrypted end to end."/>
             </StackPanel>
         </ScrollViewer>
     </Grid>
-</Page>
+</phone:PhoneApplicationPage>

@@ -44,6 +44,12 @@ namespace JabberWP.Core
 
         private int _iqCounter;
         private bool _disposed;
+
+        /// <summary>
+        /// Random per-connection prefix for stanza ids. See NextId() for why this
+        /// exists rather than a bare counter.
+        /// </summary>
+        private readonly string ID_PREFIX = "jw" + Guid.NewGuid().ToString("N").Substring(0, 8);
         #endregion
 
         #region --Properties and events--
@@ -1117,10 +1123,25 @@ namespace JabberWP.Core
             }
         }
 
+        /// <summary>
+        /// A stanza id that is unique across sessions, not just within one.
+        ///
+        /// This used to be "jw" + a counter that restarted at 1 on every connect, so
+        /// the third message of every session was always "jw3". Receivers key stored
+        /// messages on the sender's stanza id - UWPX uses id + chat id as its primary
+        /// key and writes with InsertOrReplace - so a repeated id silently OVERWROTE
+        /// an older message instead of adding a new one. Symptoms on the far end: new
+        /// messages never appear in the open conversation (though notifications still
+        /// fire, since those come from the stanza), and a shared picture inherits the
+        /// previous session's cached file and fails to load.
+        ///
+        /// The per-connection prefix makes ids unique between runs; the counter keeps
+        /// them unique within a run, which IQ matching relies on.
+        /// </summary>
         private string NextId()
         {
             _iqCounter++;
-            return "jw" + _iqCounter.ToString();
+            return ID_PREFIX + '-' + _iqCounter.ToString();
         }
 
         private static XElement Iq(string type, string id, XElement payload)

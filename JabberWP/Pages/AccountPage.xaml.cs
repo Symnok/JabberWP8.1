@@ -1,22 +1,17 @@
 ﻿using System;
-using System.Collections.Generic;
+using System.Windows;
+using System.Windows.Navigation;
 using JabberWP.Core;
 using JabberWP.Services;
-using Windows.ApplicationModel.Activation;
-using Windows.Storage;
-using Windows.Storage.Pickers;
-using Windows.Storage.Provider;
-using Windows.UI.Xaml;
-using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Navigation;
+using Microsoft.Phone.Controls;
 
 namespace JabberWP.Pages
 {
     /// <summary>
     /// Edits the single stored account. Saving reconnects, because a changed JID or
-    /// password is meaningless until the server has accepted it.
+    /// password means nothing until the server has accepted it.
     /// </summary>
-    public sealed partial class AccountPage : Page
+    public partial class AccountPage : PhoneApplicationPage
     {
         private string _originalJid = "";
 
@@ -88,125 +83,16 @@ namespace JabberWP.Pages
             AccountStore.Save(account);
             _originalJid = account.Jid;
 
-            if (Frame.CanGoBack)
+            if (NavigationService.CanGoBack)
             {
-                Frame.GoBack();
+                NavigationService.GoBack();
+            }
+            else
+            {
+                NavigationService.Navigate(
+                    new Uri("/Pages/ContactsPage.xaml", UriKind.Relative));
             }
         }
-
-        #region --Backup and restore--
-        /// <summary>
-        /// Writes the account to a file the user chooses. A picker rather than a
-        /// fixed location, for two reasons: app storage is deleted on uninstall,
-        /// which is the very thing this guards against, and the picker needs no
-        /// extra capability in the manifest.
-        /// </summary>
-        private void Backup_Click(object sender, RoutedEventArgs e)
-        {
-            FileSavePicker picker = new FileSavePicker();
-            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
-            picker.SuggestedFileName = "jabberwp-account";
-            picker.FileTypeChoices.Add("Text file", new List<string> { ".txt" });
-
-            // The picker suspends the app, and OnSuspending would otherwise close
-            // the XMPP stream while we are still in our own flow.
-            AppState.Instance.IsPickingFile = true;
-            picker.PickSaveFileAndContinue();
-        }
-
-        private void Restore_Click(object sender, RoutedEventArgs e)
-        {
-            FileOpenPicker picker = new FileOpenPicker();
-            picker.ViewMode = PickerViewMode.List;
-            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
-            picker.FileTypeFilter.Add(".txt");
-
-            AppState.Instance.IsPickingFile = true;
-            picker.PickSingleFileAndContinue();
-        }
-
-        /// <summary>Called by App.OnActivated once the save picker returns.</summary>
-        public async void ContinueFileSavePicker(FileSavePickerContinuationEventArgs args)
-        {
-            AppState.Instance.IsPickingFile = false;
-
-            if (args == null || args.File == null)
-            {
-                return;                            // cancelled
-            }
-
-            XmppAccount account = BuildAccountFromFields();
-            try
-            {
-                // Tells a provider like OneDrive that we are mid-write, so it does
-                // not sync a half-written file.
-                CachedFileManager.DeferUpdates(args.File);
-                await FileIO.WriteTextAsync(args.File, AccountStore.exportToText(account));
-                FileUpdateStatus status = await CachedFileManager.CompleteUpdatesAsync(args.File);
-
-                ShowStatus(status == FileUpdateStatus.Complete
-                    ? "Account backed up to " + args.File.Name + "."
-                    : "Could not finish writing " + args.File.Name + ".");
-            }
-            catch (Exception ex)
-            {
-                ShowStatus("Backup failed: " + ex.Message);
-            }
-        }
-
-        /// <summary>Called by App.OnActivated once the open picker returns.</summary>
-        public async void ContinueFileOpenPicker(FileOpenPickerContinuationEventArgs args)
-        {
-            AppState.Instance.IsPickingFile = false;
-
-            if (args == null || args.Files == null || args.Files.Count == 0)
-            {
-                return;                            // cancelled
-            }
-
-            try
-            {
-                string text = await FileIO.ReadTextAsync(args.Files[0]);
-                XmppAccount account = AccountStore.parseBackup(text);
-                if (account == null)
-                {
-                    ShowStatus("That is not a JabberWP account backup.");
-                    return;
-                }
-
-                // Filled in but NOT saved or connected: the user gets to see what
-                // was restored and press "save and reconnect" themselves.
-                jid_tbx.Text = account.Jid ?? "";
-                password_pbx.Password = account.Password ?? "";
-                host_tbx.Text = account.Host ?? "";
-                port_tbx.Text = account.Port.ToString();
-
-                ShowStatus("Restored from " + args.Files[0].Name +
-                           ". Press save and reconnect to use it.");
-            }
-            catch (Exception ex)
-            {
-                ShowStatus("Restore failed: " + ex.Message);
-            }
-        }
-
-        private XmppAccount BuildAccountFromFields()
-        {
-            XmppAccount account = new XmppAccount();
-            account.Jid = jid_tbx.Text.Trim();
-            account.Password = password_pbx.Password;
-            account.Host = host_tbx.Text.Trim();
-            account.Resource = Xmpp.DEFAULT_RESOURCE;
-
-            int port;
-            if (!int.TryParse(port_tbx.Text.Trim(), out port) || port <= 0)
-            {
-                port = Xmpp.DEFAULT_PORT;
-            }
-            account.Port = port;
-            return account;
-        }
-        #endregion
 
         private void ShowStatus(string message)
         {

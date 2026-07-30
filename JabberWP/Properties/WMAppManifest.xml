@@ -1,0 +1,75 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<Deployment xmlns="http://schemas.microsoft.com/windowsphone/2014/deployment" AppPlatformVersion="8.1">
+  <DefaultLanguage xmlns="" code="en-US"/>
+  <App xmlns="" ProductID="{e7183dae-4895-4fab-ae6d-f36497598d48}" Title="JabberWP" RuntimeType="Silverlight" Version="1.0.0.0" Genre="apps.normal"  Author="JabberWP author" Description="Sample description" SDOptOut ="false" BackUpOptOut ="false" Publisher="JabberWP" PublisherID="{fc34a1ed-75d1-44d5-adee-83b11f34eeb7}">
+    <IconPath IsRelative="true" IsResource="false">Assets\ApplicationIcon.png</IconPath>
+    <Capabilities>
+      <!-- Networking for the XMPP connection. Location is not for finding the user:
+           it is what the continuous background execution below requires.
+           The template's audio, sensors and browser-component capabilities were
+           dropped - asking for what the app does not use only costs trust. -->
+      <Capability Name="ID_CAP_NETWORKING"/>
+      <Capability Name="ID_CAP_LOCATION"/>
+      <!-- PhotoChooserTask reads the picture library; with ShowCamera it can also
+           take a new photo. -->
+      <Capability Name="ID_CAP_MEDIALIB_PHOTO"/>
+      <Capability Name="ID_CAP_ISV_CAMERA"/>
+    </Capabilities>
+    <Tasks>
+      <!--
+        NavigationPage is LoginPage: it sends the user straight on to the contacts
+        list when an account is already stored.
+
+        BackgroundExecution is THE reason this app moved from WinRT to Silverlight.
+        It lets the app keep running after HOME is pressed instead of being
+        suspended, which is what closed the XMPP socket before. There is no appx
+        equivalent, which is why no amount of manifest work fixed it on the WinRT
+        build.
+
+        It only takes effect while the app holds a live, actively reporting
+        Geolocator subscription - see Services\LocationKeepAlive.cs. Declaration and
+        subscription are both required; either alone does nothing.
+      -->
+      <DefaultTask Name ="_default" NavigationPage="Pages/LoginPage.xaml" ActivationPolicy="Resume">
+        <BackgroundExecution>
+          <ExecutionType Name="LocationTracking"/>
+        </BackgroundExecution>
+      </DefaultTask>
+      <!--
+        The periodic agent. Must sit inside <Tasks>, after DefaultTask - the schema
+        rejects it anywhere else.
+        Name/Source must match the agent assembly and Type its full class name, or
+        the OS refuses to schedule it, silently.
+        Runs roughly every 30 minutes when the app is not running; the app itself
+        keeps a live connection through the BackgroundExecution declaration above.
+      -->
+      <ExtendedTask Name="BackgroundTask">
+        <BackgroundServiceAgent Specifier="ScheduledTaskAgent"
+                                Name="JabberAgent"
+                                Source="JabberAgent"
+                                Type="JabberAgent.ScheduledAgent" />
+      </ExtendedTask>
+    </Tasks>
+    <Tokens>
+      <PrimaryToken TokenID="JabberWPToken" TaskName="_default">
+        <TemplateFlip>
+          <SmallImageURI IsRelative="true" IsResource="false">Assets\Tiles\FlipCycleTileSmall.png</SmallImageURI>
+          <Count>0</Count>
+          <BackgroundImageURI IsRelative="true" IsResource="false">Assets\Tiles\FlipCycleTileMedium.png</BackgroundImageURI>
+          <Title>JabberWP</Title>
+          <BackContent></BackContent>
+          <BackBackgroundImageURI></BackBackgroundImageURI>
+          <BackTitle></BackTitle>
+          <DeviceLockImageURI></DeviceLockImageURI>
+          <HasLarge></HasLarge>
+        </TemplateFlip>
+      </PrimaryToken>
+    </Tokens>
+    <ScreenResolutions>
+      <ScreenResolution Name="ID_RESOLUTION_WVGA"/>
+      <ScreenResolution Name="ID_RESOLUTION_WXGA"/>
+      <ScreenResolution Name="ID_RESOLUTION_HD720P"/>
+    </ScreenResolutions>
+  </App>
+</Deployment>

@@ -1,16 +1,13 @@
 ﻿using System;
+using System.Windows;
+using System.Windows.Navigation;
 using JabberWP.Core;
 using JabberWP.Services;
-using Windows.ApplicationModel.Activation;
-using Windows.Storage;
-using Windows.Storage.Pickers;
-using Windows.UI.Xaml;
-using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Navigation;
+using Microsoft.Phone.Controls;
 
 namespace JabberWP.Pages
 {
-    public sealed partial class LoginPage : Page
+    public partial class LoginPage : PhoneApplicationPage
     {
         public LoginPage()
         {
@@ -20,7 +17,14 @@ namespace JabberWP.Pages
         protected override void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
-            AppState.Instance.AttachDispatcher(Dispatcher);
+
+            // Already signed in - this page is the app's start page, so a launch with
+            // a stored account lands here and moves straight on.
+            if (AccountStore.HasAccount && e.NavigationMode == NavigationMode.New)
+            {
+                GoToContacts();
+                return;
+            }
 
             XmppAccount saved = AccountStore.Load();
             if (saved != null)
@@ -63,68 +67,16 @@ namespace JabberWP.Pages
                 return;
             }
 
-            // Only save once the server has actually accepted the credentials, so a
-            // typo is never persisted.
+            // Saved only once the server has accepted the credentials, so a typo is
+            // never persisted.
             AccountStore.Save(account);
-            Frame.Navigate(typeof(ContactsPage));
-
-            // Drop the login page: going "back" to it from the contact list would be
-            // confusing while a session is live.
-            if (Frame.CanGoBack)
-            {
-                Frame.BackStack.Clear();
-            }
+            GoToContacts();
         }
 
-        #region --Restore from backup--
-        private void Restore_Click(object sender, RoutedEventArgs e)
+        private void GoToContacts()
         {
-            FileOpenPicker picker = new FileOpenPicker();
-            picker.ViewMode = PickerViewMode.List;
-            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
-            picker.FileTypeFilter.Add(".txt");
-
-            // The picker suspends the app; the flag keeps OnSuspending from doing
-            // its usual teardown while we are mid-flow.
-            AppState.Instance.IsPickingFile = true;
-            picker.PickSingleFileAndContinue();
+            NavigationService.Navigate(new Uri("/Pages/ContactsPage.xaml", UriKind.Relative));
         }
-
-        /// <summary>Called by App.OnActivated once the picker returns.</summary>
-        public async void ContinueFileOpenPicker(FileOpenPickerContinuationEventArgs args)
-        {
-            AppState.Instance.IsPickingFile = false;
-
-            if (args == null || args.Files == null || args.Files.Count == 0)
-            {
-                return;                            // cancelled
-            }
-
-            try
-            {
-                string text = await FileIO.ReadTextAsync(args.Files[0]);
-                XmppAccount account = AccountStore.parseBackup(text);
-                if (account == null)
-                {
-                    ShowError("That is not a JabberWP account backup.");
-                    return;
-                }
-
-                // Filled in, not connected: the user presses connect, which is also
-                // what saves the account once the server has accepted it.
-                jid_tbx.Text = account.Jid ?? "";
-                password_pbx.Password = account.Password ?? "";
-                host_tbx.Text = account.Host ?? "";
-                port_tbx.Text = account.Port.ToString();
-
-                ShowError("Restored from " + args.Files[0].Name + ". Press connect.");
-            }
-            catch (Exception ex)
-            {
-                ShowError("Restore failed: " + ex.Message);
-            }
-        }
-        #endregion
 
         private void ShowError(string message)
         {

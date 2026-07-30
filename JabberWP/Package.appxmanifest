@@ -1,34 +1,66 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Package xmlns="http://schemas.microsoft.com/appx/2010/manifest" xmlns:m2="http://schemas.microsoft.com/appx/2013/manifest" xmlns:m3="http://schemas.microsoft.com/appx/2014/manifest" xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest">
-  <Identity Name="JabberWP" Publisher="CN=JabberWP" Version="0.0.1.8" />
-  <mp:PhoneIdentity PhoneProductId="8d2c0f9e-4b1a-4a1c-9a2b-6f3e5d1c7a01" PhonePublisherId="00000000-0000-0000-0000-000000000000" />
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/2010/manifest"
+         xmlns:m2="http://schemas.microsoft.com/appx/2013/manifest"
+         xmlns:m3="http://schemas.microsoft.com/appx/2014/manifest"
+         xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest">
+
+  <Identity Name="b5648ce4-fbda-4f4a-845c-2f734ec7c8ad"
+            Publisher="CN=user"
+            Version="1.0.0.0" />
+
+  <mp:PhoneIdentity PhoneProductId="e7183dae-4895-4fab-ae6d-f36497598d48"
+                    PhonePublisherId="fc34a1ed-75d1-44d5-adee-83b11f34eeb7"/>
+
   <Properties>
     <DisplayName>JabberWP</DisplayName>
-    <PublisherDisplayName>JabberWP</PublisherDisplayName>
+    <PublisherDisplayName>user</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
+
   <Prerequisites>
     <OSMinVersion>6.3.1</OSMinVersion>
     <OSMaxVersionTested>6.3.1</OSMaxVersionTested>
   </Prerequisites>
+
   <Resources>
-    <Resource Language="en-US" />
+    <Resource Language="x-generate"/>
   </Resources>
+
   <Applications>
-    <Application Id="App" Executable="$targetnametoken$.exe" EntryPoint="JabberWP.App">
-      <m3:VisualElements DisplayName="JabberWP" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" Description="XMPP chat client" ForegroundText="light" BackgroundColor="#0072C6">
-        <m3:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" Square71x71Logo="Assets\Square71x71Logo.png">
-        </m3:DefaultTile>
+    <Application Id="App"
+                 Executable="AGHost.exe"
+                 EntryPoint="MainPage.xaml">
+      <m3:VisualElements
+          DisplayName="JabberWP"
+          Square150x150Logo="Assets\SquareTile150x150.png"
+          Square44x44Logo="Assets\Logo.png"
+          Description="JabberWP"
+          ForegroundText="light"
+          BackgroundColor="#464646">
+        <m3:DefaultTile Square71x71Logo="Assets\SquareTile71x71.png"/>
         <m3:SplashScreen Image="Assets\SplashScreen.png" />
       </m3:VisualElements>
+
+      <Extensions>
+        <Extension Category="windows.backgroundTasks" EntryPoint="AgHost.BackgroundTask">
+          <BackgroundTasks>
+          <Task Type="systemEvent" />
+          </BackgroundTasks>
+        </Extension>
+      </Extensions>
+
     </Application>
   </Applications>
   <Capabilities>
-    <Capability Name="internetClient" />
-    <!--
-      internetClient is all an outbound XMPP connection needs.
-      Adding a ControlChannelTrigger-based background connection later will also
-      require internetClientServer.
-    -->
   </Capabilities>
+
+  <Extensions>
+    <Extension Category="windows.activatableClass.inProcessServer">
+      <InProcessServer>
+        <Path>AgHostSvcs.dll</Path>
+        <ActivatableClass ActivatableClassId="AgHost.BackgroundTask" ThreadingModel="both" />
+      </InProcessServer>
+    </Extension>
+  </Extensions>
+
 </Package>

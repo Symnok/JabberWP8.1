@@ -1,41 +1,12 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
-using Windows.Storage;
-using Windows.Storage.Streams;
 using Windows.Web.Http;
 using Windows.Web.Http.Headers;
 
 namespace JabberWP.Core
 {
-    /// <summary>
-    /// One PUT/GET pair handed out by an XEP-0363 upload component.
-    /// </summary>
-    public class UploadSlot
-    {
-        /// <summary>Where the bytes go (HTTP PUT).</summary>
-        public string PutUrl { get; set; }
-
-        /// <summary>The URL to send in the message - what the recipient fetches.</summary>
-        public string GetUrl { get; set; }
-
-        /// <summary>
-        /// Headers the component requires on the PUT (often Authorization).
-        /// Only Authorization, Cookie and Expires are permitted by the XEP.
-        /// </summary>
-        public Dictionary<string, string> Headers { get; private set; }
-
-        public UploadSlot()
-        {
-            Headers = new Dictionary<string, string>();
-        }
-
-        public bool IsUsable
-        {
-            get { return !string.IsNullOrEmpty(PutUrl) && !string.IsNullOrEmpty(GetUrl); }
-        }
-    }
-
     /// <summary>
     /// The HTTP half of XEP-0363: upload the file the server just gave us a slot for.
     /// Separate from XmppConnection because it speaks HTTP, not XMPP - the only thing
@@ -44,12 +15,15 @@ namespace JabberWP.Core
     public static class HttpUploadService
     {
         /// <summary>
-        /// PUTs the file to the slot. Returns null on success, or an error to show.
+        /// PUTs the content to the slot. Returns null on success, or an error to show.
+        ///
+        /// Takes a Stream rather than a file: on this platform a picture comes from
+        /// PhotoChooserTask, which hands back an open stream and no path worth using.
         /// </summary>
-        public static async Task<string> PutAsync(UploadSlot slot, StorageFile file,
+        public static async Task<string> PutAsync(UploadSlot slot, Stream content,
             string contentType)
         {
-            if (slot == null || !slot.IsUsable || file == null)
+            if (slot == null || !slot.IsUsable || content == null)
             {
                 return "No upload slot.";
             }
@@ -62,39 +36,47 @@ namespace JabberWP.Core
 
             try
             {
-                using (HttpClient client = new HttpClient())
-                using (IRandomAccessStreamWithContentType stream = await file.OpenReadAsync())
+                using (HttpClient httpClient = new HttpClient())
                 {
-                    HttpStreamContent content = new HttpStreamContent(stream);
-                    if (!string.IsNullOrEmpty(contentType))
+                    // Rewind: the chooser may already have read from it (for the
+                    // thumbnail), and a partially consumed stream uploads a truncated
+                    // file that the recipient cannot open.
+                    if (content.CanSeek)
                     {
-                        try
-                        {
-                            content.Headers.ContentType =
-                                new HttpMediaTypeHeaderValue(contentType);
-                        }
-                        catch (Exception)
-                        {
-                            // An odd content type is not worth failing the upload.
-                        }
+                        content.Position = 0;
                     }
 
                     foreach (KeyValuePair<string, string> header in slot.Headers)
                     {
                         try
                         {
-                            client.DefaultRequestHeaders.Append(header.Key, header.Value);
+                            httpClient.DefaultRequestHeaders.Append(header.Key, header.Value);
+                        }
+                        catch (Exception)
+                        {
+                            // An unusable header is not worth failing the upload over.
+                        }
+                    }
+
+                    HttpStreamContent httpContent =
+                        new HttpStreamContent(content.AsInputStream());
+                    if (!string.IsNullOrEmpty(contentType))
+                    {
+                        try
+                        {
+                            httpContent.Headers.ContentType =
+                                new HttpMediaTypeHeaderValue(contentType);
                         }
                         catch (Exception)
                         {
                         }
                     }
 
-                    HttpResponseMessage response = await client.PutAsync(target, content);
+                    HttpResponseMessage response = await httpClient.PutAsync(target, httpContent);
                     if (!response.IsSuccessStatusCode)
                     {
-                        return "Upload failed: " + (int)response.StatusCode + " " +
-                               response.ReasonPhrase;
+                        return "Upload rejected by the server: " +
+                               (int)response.StatusCode + ' ' + response.ReasonPhrase;
                     }
                 }
                 return null;

@@ -1,22 +1,21 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
+using System.Windows;
 using JabberWP.Core;
 using JabberWP.Models;
-using Windows.Storage;
-using Windows.Storage.FileProperties;
-using Windows.UI.Core;
 
 namespace JabberWP.Services
 {
     /// <summary>
     /// The one live connection and the chats built from it.
     ///
-    /// This is the ONLY place XmppConnection events are marshalled onto the UI
-    /// thread. Core raises events on the socket's thread; every collection here is
-    /// bound to XAML, so touching one off-thread would throw RPC_E_WRONG_THREAD.
-    /// Doing it once here means no page ever has to think about it.
+    /// The ONLY place XmppConnection events are marshalled onto the UI thread. Core
+    /// raises events on the socket's thread and every collection here is bound to
+    /// XAML, so doing it anywhere else would mean touching bound state off-thread.
+    /// Doing it once here also means the background agent can use Core without a UI
+    /// thread existing at all.
     /// </summary>
     public class AppState
     {
@@ -29,7 +28,6 @@ namespace JabberWP.Services
         private readonly Dictionary<string, Chat> BY_JID =
             new Dictionary<string, Chat>(StringComparer.OrdinalIgnoreCase);
 
-        private CoreDispatcher _dispatcher;
         private XmppConnection _connection;
 
         /// <summary>JID of the XEP-0363 upload component, discovered once per session.</summary>
@@ -41,14 +39,9 @@ namespace JabberWP.Services
             SubscriptionRequests = new ObservableCollection<SubscriptionRequest>();
         }
 
-        /// <summary>Contacts, bound directly by the contacts page.</summary>
         public ObservableCollection<Chat> Chats { get; private set; }
 
-        /// <summary>
-        /// Unanswered "may I see your presence?" requests. In memory only: if the
-        /// app closes before the user answers, the server resends the request on the
-        /// next connect, which is where the durable copy lives.
-        /// </summary>
+        /// <summary>Unanswered requests to see our presence.</summary>
         public ObservableCollection<SubscriptionRequest> SubscriptionRequests { get; private set; }
 
         public XmppAccount Account { get; private set; }
@@ -63,37 +56,13 @@ namespace JabberWP.Services
             get { return State == XmppState.Connected; }
         }
 
-        /// <summary>Chat currently open, so incoming messages there are not counted unread.</summary>
+        /// <summary>Chat on screen, so its messages are not counted unread or toasted.</summary>
         public string ActiveChatJid { get; set; }
-
-        /// <summary>
-        /// True from the moment the file picker is launched until its continuation
-        /// arrives. The picker suspends the app on this platform, and the suspend
-        /// handler must not close the XMPP stream for what is really a round trip
-        /// inside our own flow.
-        /// </summary>
-        public bool IsPickingFile { get; set; }
 
         public event EventHandler<XmppState> StateChanged;
         public event EventHandler<string> Closed;
 
-        /// <summary>
-        /// Captures the UI dispatcher. Call once from the first page that loads -
-        /// there is no ambient way to get it from a non-UI thread later.
-        /// </summary>
-        public void AttachDispatcher(CoreDispatcher dispatcher)
-        {
-            if (_dispatcher == null)
-            {
-                _dispatcher = dispatcher;
-            }
-        }
-
         #region --Connection lifecycle--
-        /// <summary>
-        /// Connects with the given account. Returns null on success or an error to
-        /// show the user.
-        /// </summary>
         public async Task<string> ConnectAsync(XmppAccount account)
         {
             await DisconnectAsync();
@@ -114,15 +83,17 @@ namespace JabberWP.Services
             if (error != null)
             {
                 Detach();
+                return error;
             }
-            return error;
+
+            // Only once there is a session worth keeping alive.
+            LocationKeepAlive.Instance.Start();
+            return null;
         }
 
         /// <summary>
-        /// Connects using the stored account if the session is down. Returns null if
-        /// already connected or the reconnect worked, otherwise an error.
-        /// Used after the app comes back from the file picker, where the socket may
-        /// not have survived being suspended.
+        /// Connects using the stored account if the session is down. Null if already
+        /// connected or the reconnect worked.
         /// </summary>
         public async Task<string> EnsureConnectedAsync()
         {
@@ -183,17 +154,28 @@ namespace JabberWP.Services
             XmppMessage message = await _connection.SendMessageAsync(chat.Jid, body);
             if (message != null)
             {
-                // Already on the UI thread here (a button press), so add directly.
                 chat.Add(message);
             }
         }
 
-        #region --Subscription requests--
         /// <summary>
-        /// Accepts a request: the contact may see us, and we ask to see them. Also
-        /// creates the chat so the new contact is immediately usable rather than
-        /// waiting for the server's roster push.
+        /// Renames a contact. Applied locally at once, then pushed to the server; the
+        /// roster push that comes back confirms it.
         /// </summary>
+        public async Task RenameAsync(Chat chat, string name)
+        {
+            if (chat == null)
+            {
+                return;
+            }
+
+            chat.Name = name == null ? "" : name.Trim();
+            if (_connection != null)
+            {
+                await _connection.SetContactNameAsync(chat.Jid, chat.Name);
+            }
+        }
+
         public async Task AcceptSubscriptionAsync(SubscriptionRequest request)
         {
             if (request == null || _connection == null)
@@ -203,6 +185,8 @@ namespace JabberWP.Services
 
             SubscriptionRequests.Remove(request);
             GetOrCreateChat(request.Jid, null);
+            // Also asks to see them: subscriptions are one-directional, so accepting
+            // alone would leave the contact permanently "offline" in our list.
             await _connection.AnswerSubscriptionAsync(request.Jid, true, true);
         }
 
@@ -218,9 +202,72 @@ namespace JabberWP.Services
         }
 
         /// <summary>
-        /// Adds a contact and asks to see their presence. Returns null on success or
-        /// an error to show.
+        /// Shares a picture: get a slot from the server's XEP-0363 component, PUT the
+        /// bytes over HTTPS, then send the resulting URL as the message. That is how
+        /// file sharing works on XMPP, and it is the same shape as the links other
+        /// clients send us - the chat bubble already renders an image URL as a picture.
+        ///
+        /// Returns null on success or an error to show.
         /// </summary>
+        public async Task<string> SendImageAsync(Chat chat, System.IO.Stream content,
+            string fileName, string contentType)
+        {
+            if (chat == null || content == null)
+            {
+                return "Nothing to send.";
+            }
+            if (_connection == null || !IsConnected)
+            {
+                return "Not connected.";
+            }
+
+            // Cached: discovery is several round trips and the component does not move
+            // while we are connected.
+            if (_uploadService == null)
+            {
+                _uploadService = await _connection.FindUploadServiceAsync();
+            }
+            if (string.IsNullOrEmpty(_uploadService))
+            {
+                return "This server does not offer file upload (XEP-0363).";
+            }
+
+            long size = 0;
+            try
+            {
+                size = content.Length;
+            }
+            catch (Exception)
+            {
+                // A stream that cannot report its length cannot be given a slot: the
+                // server needs the size up front to accept or refuse it.
+                return "Could not measure the picture.";
+            }
+
+            UploadSlot slot = await _connection.RequestUploadSlotAsync(
+                _uploadService, fileName, (ulong)size, contentType);
+            if (slot == null)
+            {
+                return "The server refused the upload. The picture may be too large.";
+            }
+
+            string error = await HttpUploadService.PutAsync(slot, content, contentType);
+            if (error != null)
+            {
+                return error;
+            }
+
+            XmppMessage message = await _connection.SendFileUrlAsync(chat.Jid, slot.GetUrl);
+            if (message == null)
+            {
+                return "Upload finished but the message could not be sent.";
+            }
+
+            chat.Add(message);
+            return null;
+        }
+
+        /// <summary>Adds a contact and asks to see their presence.</summary>
         public async Task<string> AddContactAsync(string bareJid)
         {
             if (_connection == null || !IsConnected)
@@ -239,86 +286,7 @@ namespace JabberWP.Services
             await _connection.AddContactAsync(jid, null);
             return null;
         }
-        #endregion
 
-        /// <summary>
-        /// Shares a picture: get a slot from the server's XEP-0363 component, PUT the
-        /// bytes over HTTPS, then send the resulting URL as the message. This is how
-        /// file sharing works on XMPP - there is no in-band image transfer worth
-        /// having - and it is the same shape as the links currently arriving from
-        /// other clients.
-        ///
-        /// Returns null on success, or an error to show the user.
-        /// </summary>
-        public async Task<string> SendImageAsync(Chat chat, StorageFile file)
-        {
-            if (chat == null || file == null)
-            {
-                return "Nothing to send.";
-            }
-            if (_connection == null || !IsConnected)
-            {
-                return "Not connected.";
-            }
-
-            // Cached: discovery is two round trips and the component does not move
-            // during a session.
-            if (_uploadService == null)
-            {
-                _uploadService = await _connection.FindUploadServiceAsync();
-            }
-            if (string.IsNullOrEmpty(_uploadService))
-            {
-                return "This server does not offer file upload (XEP-0363).";
-            }
-
-            BasicProperties properties = await file.GetBasicPropertiesAsync();
-            UploadSlot slot = await _connection.RequestUploadSlotAsync(
-                _uploadService, file.Name, properties.Size, file.ContentType);
-            if (slot == null)
-            {
-                return "The server refused the upload - the file may be too large.";
-            }
-
-            string error = await HttpUploadService.PutAsync(slot, file, file.ContentType);
-            if (error != null)
-            {
-                return error;
-            }
-
-            XmppMessage message = await _connection.SendFileUrlAsync(chat.Jid, slot.GetUrl);
-            if (message == null)
-            {
-                return "Upload finished but the message could not be sent.";
-            }
-
-            chat.Add(message);
-            return null;
-        }
-
-        /// <summary>
-        /// Renames a contact. Applied locally straight away so the list reacts
-        /// immediately, then pushed to the server; the roster push that comes back
-        /// confirms it (and would correct it if the server disagreed).
-        /// </summary>
-        public async Task RenameAsync(Chat chat, string name)
-        {
-            if (chat == null)
-            {
-                return;
-            }
-
-            chat.Name = name == null ? "" : name.Trim();
-            if (_connection != null)
-            {
-                await _connection.SetContactNameAsync(chat.Jid, chat.Name);
-            }
-        }
-
-        /// <summary>
-        /// The chat for a JID, creating one if the message came from somebody who is
-        /// not in the roster.
-        /// </summary>
         public Chat GetOrCreateChat(string bareJid, string displayName)
         {
             if (string.IsNullOrEmpty(bareJid))
@@ -376,10 +344,12 @@ namespace JabberWP.Services
                 {
                     return;
                 }
+
                 chat.Add(message);
                 if (!string.Equals(ActiveChatJid, chat.Jid, StringComparison.OrdinalIgnoreCase))
                 {
                     chat.Unread = chat.Unread + 1;
+                    ToastHelper.showMessage(chat.Jid, message.Body);
                 }
             });
         }
@@ -393,9 +363,8 @@ namespace JabberWP.Services
                     Chat existing;
                     if (BY_JID.TryGetValue(item.Jid, out existing))
                     {
-                        // Keep the chat and its history, but take the new name: this
-                        // path also carries roster pushes, which is how a rename made
-                        // on another client (or by us) arrives.
+                        // This path also carries roster pushes, which is how a rename
+                        // made on another client arrives.
                         existing.Name = item.Name;
                         continue;
                     }
@@ -403,6 +372,20 @@ namespace JabberWP.Services
                     BY_JID[item.Jid] = chat;
                     Chats.Add(chat);
                 }
+            });
+        }
+
+        private void OnPresenceChanged(object sender, RosterItem item)
+        {
+            RunOnUi(() =>
+            {
+                Chat chat;
+                if (!BY_JID.TryGetValue(item.Jid, out chat))
+                {
+                    return;
+                }
+                chat.Presence = item.Presence;
+                chat.Status = item.Status;
             });
         }
 
@@ -415,8 +398,7 @@ namespace JabberWP.Services
                     return;
                 }
 
-                // Servers resend outstanding requests on every connect, so the same
-                // one arrives again after each reconnect.
+                // Servers resend outstanding requests on every connect.
                 foreach (SubscriptionRequest existing in SubscriptionRequests)
                 {
                     if (string.Equals(existing.Jid, bareJid, StringComparison.OrdinalIgnoreCase))
@@ -428,39 +410,31 @@ namespace JabberWP.Services
             });
         }
 
-        private void OnPresenceChanged(object sender, RosterItem item)
-        {
-            RunOnUi(() =>
-            {
-                Chat chat;
-                if (!BY_JID.TryGetValue(item.Jid, out chat))
-                {
-                    return;                        // presence from a non-contact
-                }
-                chat.Presence = item.Presence;
-                chat.Status = item.Status;
-            });
-        }
-
         /// <summary>
-        /// Runs the action on the UI thread. Everything below this point touches
-        /// bound collections, so nothing may skip it.
+        /// Runs the action on the UI thread. Deployment.Current.Dispatcher rather than
+        /// a captured CoreDispatcher: it is reachable from any thread, including the
+        /// background agent's, where it simply has no UI to marshal to.
         /// </summary>
         private void RunOnUi(Action action)
         {
-            CoreDispatcher dispatcher = _dispatcher;
-            if (dispatcher == null)
+            try
             {
-                return;                            // no UI attached yet
+                System.Windows.Threading.Dispatcher dispatcher = Deployment.Current.Dispatcher;
+                if (dispatcher == null)
+                {
+                    return;
+                }
+                if (dispatcher.CheckAccess())
+                {
+                    action();
+                    return;
+                }
+                dispatcher.BeginInvoke(action);
             }
-            if (dispatcher.HasThreadAccess)
+            catch (Exception)
             {
-                action();
-                return;
+                // No UI thread - running inside the background agent.
             }
-
-            var ignored = dispatcher.RunAsync(CoreDispatcherPriority.Normal,
-                () => action());
         }
         #endregion
     }

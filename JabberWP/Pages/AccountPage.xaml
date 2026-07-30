@@ -1,81 +1,51 @@
-﻿<Page
+﻿<phone:PhoneApplicationPage
     x:Class="JabberWP.Pages.AccountPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d"
-    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    xmlns:phone="clr-namespace:Microsoft.Phone.Controls;assembly=Microsoft.Phone"
+    xmlns:shell="clr-namespace:Microsoft.Phone.Shell;assembly=Microsoft.Phone"
+    FontFamily="{StaticResource PhoneFontFamilyNormal}"
+    Foreground="{StaticResource PhoneForegroundBrush}"
+    SupportedOrientations="Portrait"
+    Orientation="Portrait"
+    shell:SystemTray.IsVisible="True">
 
-    <Grid>
+    <Grid x:Name="LayoutRoot" Background="Transparent">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Margin="19,12,19,12">
-            <TextBlock Text="JABBER" Style="{ThemeResource TitleTextBlockStyle}"
-                       Opacity="0.6"/>
-            <TextBlock Text="account" FontSize="38" Margin="0,-4,0,0"/>
+        <StackPanel Grid.Row="0" Margin="12,17,0,12">
+            <TextBlock Text="JABBER" Style="{StaticResource PhoneTextNormalStyle}" Opacity="0.6"/>
+            <TextBlock Text="account" FontSize="42" Margin="9,-7,0,0"/>
         </StackPanel>
 
-        <ScrollViewer Grid.Row="1" Margin="19,0,19,0">
+        <ScrollViewer Grid.Row="1" Margin="12,0,12,0">
             <StackPanel>
                 <TextBlock Text="jabber id" FontSize="18" Margin="4,12,0,0" Opacity="0.7"/>
-                <TextBox x:Name="jid_tbx"
-                         FontSize="22"
-                         InputScope="EmailSmtpAddress"
-                         PlaceholderText="you@example.com"/>
+                <TextBox x:Name="jid_tbx" FontSize="22" InputScope="EmailSmtpAddress"/>
 
                 <TextBlock Text="password" FontSize="18" Margin="4,12,0,0" Opacity="0.7"/>
                 <PasswordBox x:Name="password_pbx" FontSize="22"/>
 
                 <TextBlock Text="server (leave empty to use the domain)"
-                           FontSize="18" Margin="4,12,0,0" Opacity="0.7"
-                           TextWrapping="Wrap"/>
+                           FontSize="18" Margin="4,12,0,0" Opacity="0.7" TextWrapping="Wrap"/>
                 <TextBox x:Name="host_tbx" FontSize="22" InputScope="Url"/>
 
                 <TextBlock Text="port" FontSize="18" Margin="4,12,0,0" Opacity="0.7"/>
                 <TextBox x:Name="port_tbx" FontSize="22" InputScope="Number"/>
 
-                <TextBlock x:Name="status_tblck"
-                           Margin="4,16,0,0"
-                           FontSize="18"
-                           TextWrapping="Wrap"
-                           Visibility="Collapsed"/>
+                <TextBlock x:Name="status_tblck" Margin="4,16,0,0" FontSize="18"
+                           TextWrapping="Wrap" Visibility="Collapsed"/>
 
-                <ProgressBar x:Name="busy_pgb"
-                             Margin="0,16,0,0"
-                             IsIndeterminate="True"
-                             Visibility="Collapsed"/>
+                <ProgressBar x:Name="busy_pgb" Margin="0,16,0,0"
+                             IsIndeterminate="True" Visibility="Collapsed"/>
 
-                <Button x:Name="save_btn"
-                        Content="save and reconnect"
-                        HorizontalAlignment="Stretch"
-                        Margin="0,20,0,0"
+                <Button x:Name="save_btn" Content="save and reconnect"
+                        HorizontalAlignment="Stretch" Margin="0,20,0,24"
                         Click="Save_Click"/>
-
-                <TextBlock Text="backup"
-                           FontSize="24"
-                           Margin="0,28,0,0"/>
-                <TextBlock Text="Reinstalling the app deletes the stored account, so keep a copy somewhere off the app - OneDrive or the SD card. The file holds the password in plain text."
-                           FontSize="16"
-                           Opacity="0.6"
-                           TextWrapping="Wrap"
-                           Margin="4,4,0,0"/>
-
-                <Button x:Name="backup_btn"
-                        Content="back up account"
-                        HorizontalAlignment="Stretch"
-                        Margin="0,12,0,0"
-                        Click="Backup_Click"/>
-
-                <Button x:Name="restore_btn"
-                        Content="restore account"
-                        HorizontalAlignment="Stretch"
-                        Margin="0,8,0,24"
-                        Click="Restore_Click"/>
             </StackPanel>
         </ScrollViewer>
     </Grid>
-</Page>
+</phone:PhoneApplicationPage>

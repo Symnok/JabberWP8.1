@@ -1,27 +1,25 @@
 ﻿using System;
+using System.Collections.Specialized;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Navigation;
 using JabberWP.Core;
 using JabberWP.Models;
 using JabberWP.Services;
-using Windows.UI.Xaml;
-using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Controls.Primitives;
-using Windows.UI.Xaml.Input;
-using Windows.UI.Xaml.Navigation;
+using Microsoft.Phone.Controls;
 
 namespace JabberWP.Pages
 {
-    public sealed partial class ContactsPage : Page
+    public partial class ContactsPage : PhoneApplicationPage
     {
         private bool _connectAttempted;
-
-        /// <summary>Contact the rename flyout/overlay is acting on.</summary>
         private Chat _renameTarget;
 
         public ContactsPage()
         {
             InitializeComponent();
-            NavigationCacheMode = NavigationCacheMode.Enabled;
-            contacts_lstv.ItemsSource = AppState.Instance.Chats;
+            contacts_lstb.ItemsSource = AppState.Instance.Chats;
             requests_ic.ItemsSource = AppState.Instance.SubscriptionRequests;
         }
 
@@ -29,22 +27,22 @@ namespace JabberWP.Pages
         {
             base.OnNavigatedTo(e);
 
-            AppState.Instance.AttachDispatcher(Dispatcher);
-            AppState.Instance.ActiveChatJid = null;
+            // The contact list is the app's home screen, so nothing belongs behind it:
+            // BACK from here should leave the app. This also stops two loops - going
+            // "back" into the chat a toast deep-linked to, and returning to the login
+            // page while signed in.
+            while (NavigationService.RemoveBackEntry() != null)
+            {
+            }
 
+            AppState.Instance.ActiveChatJid = null;
             AppState.Instance.StateChanged += OnStateChanged;
             AppState.Instance.Closed += OnClosed;
-
-            // The roster arrives after this page is already up, so the empty-state
-            // text has to react to the collection filling rather than being decided
-            // once on navigation.
-            AppState.Instance.Chats.CollectionChanged += OnChatsChanged;
-            AppState.Instance.SubscriptionRequests.CollectionChanged += OnChatsChanged;
+            AppState.Instance.Chats.CollectionChanged += OnCollectionsChanged;
+            AppState.Instance.SubscriptionRequests.CollectionChanged += OnCollectionsChanged;
 
             UpdateState();
 
-            // Launching straight into this page (account already saved) means
-            // nothing has connected yet. Do it once, not on every back navigation.
             if (!_connectAttempted && !AppState.Instance.IsConnected)
             {
                 _connectAttempted = true;
@@ -55,22 +53,14 @@ namespace JabberWP.Pages
         protected override void OnNavigatedFrom(NavigationEventArgs e)
         {
             base.OnNavigatedFrom(e);
+
             AppState.Instance.StateChanged -= OnStateChanged;
             AppState.Instance.Closed -= OnClosed;
-            AppState.Instance.Chats.CollectionChanged -= OnChatsChanged;
-            AppState.Instance.SubscriptionRequests.CollectionChanged -= OnChatsChanged;
+            AppState.Instance.Chats.CollectionChanged -= OnCollectionsChanged;
+            AppState.Instance.SubscriptionRequests.CollectionChanged -= OnCollectionsChanged;
 
-            // This page is cached (NavigationCacheMode.Enabled), so a half-finished
-            // rename or add would still be on screen when it is shown again.
             HideRename();
             HideAddContact();
-        }
-
-        private void OnChatsChanged(object sender,
-            System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
-        {
-            // AppState has already marshalled this onto the UI thread.
-            UpdateState();
         }
 
         private async System.Threading.Tasks.Task ConnectFromStoreAsync()
@@ -78,7 +68,7 @@ namespace JabberWP.Pages
             XmppAccount account = AccountStore.Load();
             if (account == null || !account.IsUsable)
             {
-                Frame.Navigate(typeof(LoginPage));
+                NavigationService.Navigate(new Uri("/Pages/LoginPage.xaml", UriKind.Relative));
                 return;
             }
 
@@ -102,93 +92,65 @@ namespace JabberWP.Pages
             state_tblck.Text = reason;
         }
 
+        private void OnCollectionsChanged(object sender, NotifyCollectionChangedEventArgs e)
+        {
+            UpdateState();
+        }
+
         private void UpdateState()
         {
             switch (AppState.Instance.State)
             {
                 case XmppState.Connected:
                     XmppAccount account = AppState.Instance.Account;
-                    state_tblck.Text = account == null
-                        ? "connected"
-                        : "connected as " + account.Jid;
+                    string who = account == null ? "connected" : "connected as " + account.Jid;
+                    // The background half is worth showing: if this never gets past
+                    // "starting", the app is not really tracking and the system will
+                    // suspend it the moment it leaves the foreground.
+                    state_tblck.Text = who + " - background: " +
+                        (LocationKeepAlive.Instance.Status ?? "off");
                     break;
-                case XmppState.Connecting:
-                    state_tblck.Text = "connecting...";
-                    break;
-                case XmppState.Securing:
-                    state_tblck.Text = "starting TLS...";
-                    break;
-                case XmppState.Authenticating:
-                    state_tblck.Text = "signing in...";
-                    break;
-                case XmppState.Binding:
-                    state_tblck.Text = "binding resource...";
-                    break;
-                case XmppState.Failed:
-                    state_tblck.Text = "not connected";
-                    break;
-                default:
-                    state_tblck.Text = "disconnected";
-                    break;
+                case XmppState.Connecting: state_tblck.Text = "connecting..."; break;
+                case XmppState.Securing: state_tblck.Text = "starting TLS..."; break;
+                case XmppState.Authenticating: state_tblck.Text = "signing in..."; break;
+                case XmppState.Binding: state_tblck.Text = "binding resource..."; break;
+                case XmppState.Failed: state_tblck.Text = "not connected"; break;
+                default: state_tblck.Text = "disconnected"; break;
             }
 
             empty_tblck.Visibility = AppState.Instance.Chats.Count == 0
-                ? Visibility.Visible
-                : Visibility.Collapsed;
+                ? Visibility.Visible : Visibility.Collapsed;
             requests_ic.Visibility = AppState.Instance.SubscriptionRequests.Count == 0
-                ? Visibility.Collapsed
-                : Visibility.Visible;
-            reconnect_abb.IsEnabled = !AppState.Instance.IsConnected;
-
-            // Deliberately NOT disabled while disconnected: a greyed-out app bar
-            // icon is nearly invisible and reads as "the feature is missing".
-            // Adding a contact while offline fails with a message that says why.
-            addContact_abb.IsEnabled = true;
+                ? Visibility.Collapsed : Visibility.Visible;
         }
 
-        private void Contact_Click(object sender, ItemClickEventArgs e)
+        #region --Contacts--
+        private void Contact_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            Chat chat = e.ClickedItem as Chat;
+            Chat chat = contacts_lstb.SelectedItem as Chat;
+            // Cleared straight away, or coming back to this page would refuse to
+            // reopen the same conversation - selecting it again is not a change.
+            contacts_lstb.SelectedIndex = -1;
             if (chat == null)
             {
                 return;
             }
+
             chat.Unread = 0;
-            Frame.Navigate(typeof(ChatPage), chat.Jid);
+            NavigationService.Navigate(new Uri(
+                "/Pages/ChatPage.xaml?" + ToastHelper.CHAT_PARAMETER + "=" +
+                Uri.EscapeDataString(chat.Jid), UriKind.Relative));
         }
 
-        #region --Rename--
-        private void Contact_Holding(object sender, HoldingRoutedEventArgs e)
+        private void Contact_Hold(object sender, GestureEventArgs e)
         {
-            // Started fires as soon as the press passes the hold threshold;
-            // Completed only arrives on release, which feels late.
-            // Qualified: HoldingRoutedEventArgs is a XAML type but HoldingState
-            // comes from Windows.UI.Input, and importing both input namespaces
-            // invites ambiguity.
-            if (e.HoldingState != Windows.UI.Input.HoldingState.Started)
-            {
-                return;
-            }
-
             FrameworkElement element = sender as FrameworkElement;
             if (element == null)
             {
                 return;
             }
 
-            // Remember the target here rather than reading DataContext off the
-            // MenuFlyoutItem later - a flyout is not part of the item's visual tree,
-            // so inherited DataContext cannot be relied on.
             _renameTarget = element.DataContext as Chat;
-            if (_renameTarget == null)
-            {
-                return;
-            }
-            FlyoutBase.ShowAttachedFlyout(element);
-        }
-
-        private void Rename_Click(object sender, RoutedEventArgs e)
-        {
             if (_renameTarget == null)
             {
                 return;
@@ -197,19 +159,20 @@ namespace JabberWP.Pages
             renameTarget_tblck.Text = _renameTarget.Jid;
             rename_tbx.Text = _renameTarget.Name ?? "";
             rename_grid.Visibility = Visibility.Visible;
-            rename_tbx.Focus(FocusState.Programmatic);
-            rename_tbx.SelectAll();
+            rename_tbx.Focus();
         }
+        #endregion
 
+        #region --Rename--
         private async void RenameSave_Click(object sender, RoutedEventArgs e)
         {
             Chat target = _renameTarget;
+            string name = rename_tbx.Text;
             HideRename();
-            if (target == null)
+            if (target != null)
             {
-                return;
+                await AppState.Instance.RenameAsync(target, name);
             }
-            await AppState.Instance.RenameAsync(target, rename_tbx.Text);
         }
 
         private void RenameCancel_Click(object sender, RoutedEventArgs e)
@@ -223,11 +186,6 @@ namespace JabberWP.Pages
             _renameTarget = null;
         }
         #endregion
-
-        private async void Reconnect_Click(object sender, RoutedEventArgs e)
-        {
-            await ConnectFromStoreAsync();
-        }
 
         #region --Subscription requests--
         private async void AcceptSubscription_Click(object sender, RoutedEventArgs e)
@@ -248,10 +206,6 @@ namespace JabberWP.Pages
             }
         }
 
-        /// <summary>
-        /// The request a template button belongs to. Buttons inside an ItemTemplate
-        /// inherit the item as their DataContext, which is what identifies the row.
-        /// </summary>
         private static SubscriptionRequest RequestOf(object sender)
         {
             FrameworkElement element = sender as FrameworkElement;
@@ -260,12 +214,12 @@ namespace JabberWP.Pages
         #endregion
 
         #region --Add contact--
-        private void AddContact_Click(object sender, RoutedEventArgs e)
+        private void AddContact_Click(object sender, EventArgs e)
         {
             addContact_tbx.Text = "";
             addContactError_tblck.Visibility = Visibility.Collapsed;
             addContact_grid.Visibility = Visibility.Visible;
-            addContact_tbx.Focus(FocusState.Programmatic);
+            addContact_tbx.Focus();
         }
 
         private async void AddContactSave_Click(object sender, RoutedEventArgs e)
@@ -291,17 +245,25 @@ namespace JabberWP.Pages
         }
         #endregion
 
-        private void Account_Click(object sender, RoutedEventArgs e)
+        #region --Application bar--
+        private async void Reconnect_Click(object sender, EventArgs e)
         {
-            Frame.Navigate(typeof(AccountPage));
+            await ConnectFromStoreAsync();
         }
 
-        private async void SignOut_Click(object sender, RoutedEventArgs e)
+        private void Account_Click(object sender, EventArgs e)
         {
+            NavigationService.Navigate(new Uri("/Pages/AccountPage.xaml", UriKind.Relative));
+        }
+
+        private async void SignOut_Click(object sender, EventArgs e)
+        {
+            LocationKeepAlive.Instance.Stop();
             await AppState.Instance.DisconnectAsync();
             AccountStore.Clear();
             AppState.Instance.Chats.Clear();
-            Frame.Navigate(typeof(LoginPage));
+            NavigationService.Navigate(new Uri("/Pages/LoginPage.xaml", UriKind.Relative));
         }
+        #endregion
     }
 }

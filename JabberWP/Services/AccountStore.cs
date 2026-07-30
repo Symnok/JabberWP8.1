@@ -1,41 +1,43 @@
-using System;
+﻿using System;
+using System.IO.IsolatedStorage;
 using System.Text;
 using JabberWP.Core;
-using Windows.Security.Credentials;
-using Windows.Storage;
 
 namespace JabberWP.Services
 {
     /// <summary>
-    /// Persists the account. The password goes into the PasswordVault (encrypted by
-    /// the OS, per app); everything else into LocalSettings.
+    /// Persists the single account.
     ///
-    /// Keep the storage keys stable - a background task added later will read the
-    /// same values, the way GoogleContactSyncWP shares IsolatedStorageSettings
-    /// between its app and its agent.
+    /// IsolatedStorageSettings rather than the WinRT PasswordVault: it is the storage
+    /// a Silverlight background agent can also read, which matters as soon as the
+    /// ScheduledAgent needs the credentials to connect. Your GoogleContactSyncWP
+    /// shares state with its agent exactly this way.
+    ///
+    /// The password is stored unencrypted, as it was on the WinRT build - the backup
+    /// file already carries it in clear, so nothing is gained by protecting only one
+    /// of the two copies.
     /// </summary>
     public static class AccountStore
     {
-        private const string VAULT_RESOURCE = "JabberWP";
-
         private const string KEY_JID = "account_jid";
+        private const string KEY_PASSWORD = "account_password";
         private const string KEY_HOST = "account_host";
         private const string KEY_PORT = "account_port";
         private const string KEY_RESOURCE = "account_resource";
 
-        public static bool HasAccount
+        private static IsolatedStorageSettings Settings
         {
-            get
-            {
-                object jid = Settings.Values[KEY_JID];
-                return jid != null && !string.IsNullOrEmpty(jid.ToString());
-            }
+            get { return IsolatedStorageSettings.ApplicationSettings; }
         }
 
-        /// <summary>Loads the saved account, or null if none / password missing.</summary>
+        public static bool HasAccount
+        {
+            get { return !string.IsNullOrEmpty(read(KEY_JID)); }
+        }
+
         public static XmppAccount Load()
         {
-            string jid = ReadString(KEY_JID);
+            string jid = read(KEY_JID);
             if (string.IsNullOrEmpty(jid))
             {
                 return null;
@@ -43,24 +45,18 @@ namespace JabberWP.Services
 
             XmppAccount account = new XmppAccount();
             account.Jid = jid;
-            account.Host = ReadString(KEY_HOST);
-            account.Resource = ReadString(KEY_RESOURCE);
+            account.Password = read(KEY_PASSWORD);
+            account.Host = read(KEY_HOST);
+            account.Resource = read(KEY_RESOURCE);
             if (string.IsNullOrEmpty(account.Resource))
             {
                 account.Resource = Xmpp.DEFAULT_RESOURCE;
             }
 
-            object port = Settings.Values[KEY_PORT];
-            account.Port = port == null ? Xmpp.DEFAULT_PORT : Convert.ToInt32(port);
-
-            account.Password = LoadPassword(jid);
-            if (string.IsNullOrEmpty(account.Password))
-            {
-                // Settings without a password are useless for connecting, but the
-                // login page can still prefill from them, so return the account and
-                // let the caller decide.
-                account.Password = "";
-            }
+            int port;
+            account.Port = int.TryParse(read(KEY_PORT), out port) && port > 0
+                ? port
+                : Xmpp.DEFAULT_PORT;
             return account;
         }
 
@@ -71,38 +67,28 @@ namespace JabberWP.Services
                 return;
             }
 
-            Settings.Values[KEY_JID] = account.Jid ?? "";
-            Settings.Values[KEY_HOST] = account.Host ?? "";
-            Settings.Values[KEY_PORT] = account.Port;
-            Settings.Values[KEY_RESOURCE] = account.Resource ?? Xmpp.DEFAULT_RESOURCE;
-
-            SavePassword(account.Jid, account.Password);
+            write(KEY_JID, account.Jid ?? "");
+            write(KEY_PASSWORD, account.Password ?? "");
+            write(KEY_HOST, account.Host ?? "");
+            write(KEY_PORT, account.Port.ToString());
+            write(KEY_RESOURCE, account.Resource ?? Xmpp.DEFAULT_RESOURCE);
+            save();
         }
 
         public static void Clear()
         {
-            string jid = ReadString(KEY_JID);
-            if (!string.IsNullOrEmpty(jid))
-            {
-                RemovePassword(jid);
-            }
-
-            Settings.Values.Remove(KEY_JID);
-            Settings.Values.Remove(KEY_HOST);
-            Settings.Values.Remove(KEY_PORT);
-            Settings.Values.Remove(KEY_RESOURCE);
+            remove(KEY_JID);
+            remove(KEY_PASSWORD);
+            remove(KEY_HOST);
+            remove(KEY_PORT);
+            remove(KEY_RESOURCE);
+            save();
         }
 
         #region --Backup and restore--
         private const string BACKUP_HEADER = "jabberwp-account-backup 1";
 
-        /// <summary>
-        /// Serialises an account to the plain-text backup format.
-        ///
-        /// The password is written IN CLEAR. That is what makes the file usable after
-        /// a reinstall without any key material to carry over, and it is why the file
-        /// is only as safe as wherever the user puts it.
-        /// </summary>
+        /// <summary>Serialises an account to the plain-text backup format.</summary>
         public static string exportToText(XmppAccount account)
         {
             if (account == null)
@@ -121,8 +107,8 @@ namespace JabberWP.Services
         }
 
         /// <summary>
-        /// Parses a backup file. Returns null when the text is not one - a wrong file
-        /// picked by mistake must not half-overwrite the stored account.
+        /// Parses a backup file. Null when the text is not one, so a wrong file cannot
+        /// half-overwrite the stored account.
         /// </summary>
         public static XmppAccount parseBackup(string text)
         {
@@ -148,7 +134,7 @@ namespace JabberWP.Services
                 }
 
                 string key = lines[i].Substring(0, separator).Trim();
-                // Not trimmed: a password may legitimately start or end with a space.
+                // Not trimmed: a password may start or end with a space.
                 string value = lines[i].Substring(separator + 1);
 
                 switch (key)
@@ -173,80 +159,56 @@ namespace JabberWP.Services
             }
             return string.IsNullOrEmpty(account.Jid) ? null : account;
         }
-
         #endregion
 
-        #region --Password vault--
-        private static string LoadPassword(string jid)
+        #region --Isolated storage helpers--
+        private static string read(string key)
         {
             try
             {
-                PasswordVault vault = new PasswordVault();
-                PasswordCredential credential = vault.Retrieve(VAULT_RESOURCE, jid);
-                if (credential == null)
-                {
-                    return "";
-                }
-                // WP8.1 returns the credential with the password not yet populated.
-                credential.RetrievePassword();
-                return credential.Password ?? "";
+                return Settings.Contains(key) ? Settings[key] as string : "";
             }
             catch (Exception)
             {
-                // Retrieve throws rather than returning null when nothing is stored.
                 return "";
             }
         }
 
-        private static void SavePassword(string jid, string password)
+        private static void write(string key, string value)
         {
-            if (string.IsNullOrEmpty(jid))
-            {
-                return;
-            }
-
-            RemovePassword(jid);
-            if (string.IsNullOrEmpty(password))
-            {
-                return;
-            }
-
             try
             {
-                PasswordVault vault = new PasswordVault();
-                vault.Add(new PasswordCredential(VAULT_RESOURCE, jid, password));
+                Settings[key] = value;
             }
             catch (Exception)
             {
             }
         }
 
-        private static void RemovePassword(string jid)
+        private static void remove(string key)
         {
             try
             {
-                PasswordVault vault = new PasswordVault();
-                PasswordCredential existing = vault.Retrieve(VAULT_RESOURCE, jid);
-                if (existing != null)
+                if (Settings.Contains(key))
                 {
-                    vault.Remove(existing);
+                    Settings.Remove(key);
                 }
             }
             catch (Exception)
             {
             }
         }
+
+        private static void save()
+        {
+            try
+            {
+                Settings.Save();
+            }
+            catch (Exception)
+            {
+            }
+        }
         #endregion
-
-        private static ApplicationDataContainer Settings
-        {
-            get { return ApplicationData.Current.LocalSettings; }
-        }
-
-        private static string ReadString(string key)
-        {
-            object value = Settings.Values[key];
-            return value == null ? "" : value.ToString();
-        }
     }
 }

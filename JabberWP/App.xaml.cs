@@ -1,190 +1,146 @@
 ﻿using System;
-using JabberWP.Pages;
+using System.Diagnostics;
+using System.Windows;
+using System.Windows.Markup;
+using System.Windows.Navigation;
 using JabberWP.Services;
-using Windows.ApplicationModel;
-using Windows.ApplicationModel.Activation;
-using Windows.UI.Xaml;
-using Windows.UI.Xaml.Controls;
-using Windows.UI.Xaml.Media.Animation;
-using Windows.UI.Xaml.Navigation;
-
-#if WINDOWS_PHONE_APP
-using Windows.Phone.UI.Input;
-#endif
+using Microsoft.Phone.Controls;
+using Microsoft.Phone.Shell;
 
 namespace JabberWP
 {
-    public sealed partial class App : Application
+    public partial class App : Application
     {
-        private TransitionCollection _transitions;
+        /// <summary>The root frame every page is hosted in.</summary>
+        public static PhoneApplicationFrame RootFrame { get; private set; }
+
+        private bool phoneApplicationInitialized = false;
 
         public App()
         {
+            UnhandledException += Application_UnhandledException;
+
             InitializeComponent();
-            Suspending += OnSuspending;
+            InitializePhoneApplication();
+
+            if (Debugger.IsAttached)
+            {
+                Application.Current.Host.Settings.EnableFrameRateCounter = false;
+            }
         }
 
-        protected override void OnLaunched(LaunchActivatedEventArgs e)
+        #region --Lifetime--
+        /// <summary>Cold start.</summary>
+        private void Application_Launching(object sender, LaunchingEventArgs e)
         {
-            Frame rootFrame = Window.Current.Content as Frame;
-
-            if (rootFrame == null)
-            {
-                rootFrame = new Frame();
-                rootFrame.CacheSize = 1;
-                Window.Current.Content = rootFrame;
-
-#if WINDOWS_PHONE_APP
-                HardwareButtons.BackPressed += OnBackPressed;
-#endif
-            }
-
-            if (rootFrame.Content == null)
-            {
-                // Straight to the contacts list when an account is already stored;
-                // the page connects on load. Otherwise ask for credentials first.
-                Type start = AccountStore.HasAccount
-                    ? typeof(ContactsPage)
-                    : typeof(LoginPage);
-
-                if (rootFrame.ContentTransitions != null)
-                {
-                    _transitions = new TransitionCollection();
-                    foreach (Transition transition in rootFrame.ContentTransitions)
-                    {
-                        _transitions.Add(transition);
-                    }
-                }
-                rootFrame.ContentTransitions = null;
-                rootFrame.Navigated += OnFirstNavigated;
-
-                if (!rootFrame.Navigate(start, e.Arguments))
-                {
-                    throw new Exception("Failed to open the first page.");
-                }
-            }
-
-            Window.Current.Activate();
+            // Re-registered on every launch on purpose: a PeriodicTask expires after
+            // 14 days at most and the OS then stops running it silently.
+            BackgroundAgentHelper.Register();
         }
 
-#if WINDOWS_PHONE_APP
         /// <summary>
-        /// The phone has no PickSingleFileAsync: the app is suspended while the file
-        /// picker runs and reactivated with the result here. The frame and its pages
-        /// survive suspension, so the continuation is handed to whichever page asked
-        /// for it.
+        /// Coming back from being tombstoned or deactivated.
+        ///
+        /// e.IsApplicationInstancePreserved false means the process was torn down and
+        /// everything in memory is gone, so the connection has to be rebuilt from the
+        /// stored account.
         /// </summary>
-        protected override void OnActivated(IActivatedEventArgs args)
+        private async void Application_Activated(object sender, ActivatedEventArgs e)
         {
-            base.OnActivated(args);
-
-            Frame rootFrame = Window.Current.Content as Frame;
-            if (rootFrame == null)
-            {
-                // The app was terminated rather than suspended, so the page that
-                // started the pick no longer exists. Nothing sensible to resume.
-                return;
-            }
-
-            // Which page gets the result depends on who asked: the chat page picks
-            // pictures to send, the account page picks backup files.
-            if (args.Kind == ActivationKind.PickFileContinuation)
-            {
-                FileOpenPickerContinuationEventArgs openArgs =
-                    args as FileOpenPickerContinuationEventArgs;
-                if (openArgs != null)
-                {
-                    ChatPage chatPage = rootFrame.Content as ChatPage;
-                    if (chatPage != null)
-                    {
-                        chatPage.ContinueFileOpenPicker(openArgs);
-                    }
-
-                    AccountPage accountPage = rootFrame.Content as AccountPage;
-                    if (accountPage != null)
-                    {
-                        accountPage.ContinueFileOpenPicker(openArgs);
-                    }
-
-                    // Restoring a backup starts here after a reinstall, when the
-                    // login page is the only screen there is.
-                    LoginPage loginPage = rootFrame.Content as LoginPage;
-                    if (loginPage != null)
-                    {
-                        loginPage.ContinueFileOpenPicker(openArgs);
-                    }
-                }
-                Window.Current.Activate();
-                return;
-            }
-
-            if (args.Kind == ActivationKind.PickSaveFileContinuation)
-            {
-                FileSavePickerContinuationEventArgs saveArgs =
-                    args as FileSavePickerContinuationEventArgs;
-                AccountPage accountPage = rootFrame.Content as AccountPage;
-                if (accountPage != null && saveArgs != null)
-                {
-                    accountPage.ContinueFileSavePicker(saveArgs);
-                }
-                Window.Current.Activate();
-            }
-        }
-#endif
-
-        /// <summary>Restores the default page transitions after the first navigation.</summary>
-        private void OnFirstNavigated(object sender, NavigationEventArgs e)
-        {
-            Frame rootFrame = sender as Frame;
-            rootFrame.ContentTransitions = _transitions ?? new TransitionCollection
-            {
-                new NavigationThemeTransition()
-            };
-            rootFrame.Navigated -= OnFirstNavigated;
-        }
-
-#if WINDOWS_PHONE_APP
-        /// <summary>
-        /// The phone's hardware back button. Unhandled means "leave the app", which
-        /// on this platform suspends it - the connection is dropped by suspension,
-        /// not by us, until background support exists.
-        /// </summary>
-        private void OnBackPressed(object sender, BackPressedEventArgs e)
-        {
-            Frame frame = Window.Current.Content as Frame;
-            if (frame != null && frame.CanGoBack)
-            {
-                e.Handled = true;
-                frame.GoBack();
-            }
-        }
-#endif
-
-        private async void OnSuspending(object sender, SuspendingEventArgs e)
-        {
-            SuspendingDeferral deferral = e.SuspendingOperation.GetDeferral();
             try
             {
-                // The file picker suspends the app on this platform, so this fires
-                // in the middle of attaching a picture. Disconnecting there would
-                // drop the session the user is trying to send into - and did.
-                if (AppState.Instance.IsPickingFile)
-                {
-                    return;
-                }
+                // Pushes the agent's expiry out again, same as on a cold start.
+                BackgroundAgentHelper.Register();
 
-                // Close the stream cleanly. Without this the server keeps the old
-                // session bound to our resource until it times out, which then
-                // collides with the next connection attempt.
-                await AppState.Instance.DisconnectAsync();
+                await AppState.Instance.EnsureConnectedAsync();
+                LocationKeepAlive.Instance.Start();
             }
             catch (Exception)
             {
             }
-            finally
+        }
+
+        /// <summary>
+        /// Leaving the foreground. NOT a disconnect: with continuous background
+        /// execution the app keeps running here, which is the entire point of being
+        /// a Silverlight app. Closing the stream would defeat it.
+        /// </summary>
+        private void Application_Deactivated(object sender, DeactivatedEventArgs e)
+        {
+        }
+
+        /// <summary>The user backed out of the app - it really is ending.</summary>
+        private void Application_Closing(object sender, ClosingEventArgs e)
+        {
+            LocationKeepAlive.Instance.Stop();
+        }
+        #endregion
+
+        #region --Errors--
+        private void RootFrame_NavigationFailed(object sender, NavigationFailedEventArgs e)
+        {
+            if (Debugger.IsAttached)
             {
-                deferral.Complete();
+                Debugger.Break();
             }
         }
+
+        private void Application_UnhandledException(object sender, ApplicationUnhandledExceptionEventArgs e)
+        {
+            if (Debugger.IsAttached)
+            {
+                Debugger.Break();
+            }
+        }
+        #endregion
+
+        #region --Phone application initialisation--
+        private void InitializePhoneApplication()
+        {
+            if (phoneApplicationInitialized)
+            {
+                return;
+            }
+
+            RootFrame = new PhoneApplicationFrame();
+            RootFrame.Navigated += CompleteInitializePhoneApplication;
+            RootFrame.NavigationFailed += RootFrame_NavigationFailed;
+            RootFrame.Navigated += CheckForResetNavigation;
+
+            phoneApplicationInitialized = true;
+        }
+
+        private void CompleteInitializePhoneApplication(object sender, NavigationEventArgs e)
+        {
+            if (RootVisual != RootFrame)
+            {
+                RootVisual = RootFrame;
+            }
+            RootFrame.Navigated -= CompleteInitializePhoneApplication;
+        }
+
+        private void CheckForResetNavigation(object sender, NavigationEventArgs e)
+        {
+            if (e.NavigationMode == NavigationMode.Reset)
+            {
+                RootFrame.Navigated += ClearBackStackAfterReset;
+            }
+        }
+
+        private void ClearBackStackAfterReset(object sender, NavigationEventArgs e)
+        {
+            RootFrame.Navigated -= ClearBackStackAfterReset;
+
+            // Only reset-then-new/refresh should clear the stack.
+            if (e.NavigationMode != NavigationMode.New && e.NavigationMode != NavigationMode.Refresh)
+            {
+                return;
+            }
+
+            while (RootFrame.RemoveBackEntry() != null)
+            {
+            }
+        }
+        #endregion
     }
 }
