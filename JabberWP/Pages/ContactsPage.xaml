@@ -17,6 +17,7 @@
             <shell:ApplicationBar.MenuItems>
                 <shell:ApplicationBarMenuItem Text="add contact" Click="AddContact_Click"/>
                 <shell:ApplicationBarMenuItem Text="reconnect" Click="Reconnect_Click"/>
+                <shell:ApplicationBarMenuItem Text="settings" Click="Settings_Click"/>
                 <shell:ApplicationBarMenuItem Text="account" Click="Account_Click"/>
                 <shell:ApplicationBarMenuItem Text="sign out" Click="SignOut_Click"/>
             </shell:ApplicationBar.MenuItems>

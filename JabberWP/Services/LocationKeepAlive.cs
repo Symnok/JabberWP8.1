@@ -48,6 +48,15 @@ namespace JabberWP.Services
         /// <summary>Starts the subscription. Idempotent, never throws.</summary>
         public bool Start()
         {
+            // Checked here rather than at the call sites: this is the only place a
+            // Geolocator is created, so with background mode off the app cannot touch
+            // location at all, however it was reached.
+            if (!AppSettings.BackgroundEnabled)
+            {
+                Status = "disabled";
+                return false;
+            }
+
             if (_geolocator != null)
             {
                 return true;

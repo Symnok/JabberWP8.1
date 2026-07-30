@@ -25,6 +25,16 @@ namespace JabberWP.Services
         /// </summary>
         public static string Register()
         {
+            // With background mode off the agent is not merely skipped, it is removed:
+            // one registered earlier would otherwise keep waking the phone for as long
+            // as its 14 day expiry lasted.
+            if (!AppSettings.BackgroundEnabled)
+            {
+                Unregister();
+                Status = "disabled";
+                return null;
+            }
+
             try
             {
                 // Removing first is required: Add throws if a task with this name is

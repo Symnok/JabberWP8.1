@@ -251,6 +251,11 @@ namespace JabberWP.Pages
             await ConnectFromStoreAsync();
         }
 
+        private void Settings_Click(object sender, EventArgs e)
+        {
+            NavigationService.Navigate(new Uri("/Pages/SettingsPage.xaml", UriKind.Relative));
+        }
+
         private void Account_Click(object sender, EventArgs e)
         {
             NavigationService.Navigate(new Uri("/Pages/AccountPage.xaml", UriKind.Relative));
