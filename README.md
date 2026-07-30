@@ -1,6 +1,6 @@
 # JabberWP — XMPP client for Windows Phone 8.1
 
-A minimal XMPP/Jabber client targeting the **Windows Phone 8.1 WinRT** app model.
+A minimal XMPP/Jabber client targeting the **Windows Phone 8.1**
 
 ## Status
 
