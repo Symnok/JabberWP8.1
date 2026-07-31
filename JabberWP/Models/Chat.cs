@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using JabberWP.Core;
@@ -163,6 +164,59 @@ namespace JabberWP.Models
             }
             Messages.Add(message);
             LastMessage = message.Body;
+        }
+
+        /// <summary>
+        /// Stored history has been read for this conversation. Loading is lazy -
+        /// doing it for every chat as the roster arrives would read every file on
+        /// screen one, which is what we are trying to avoid on a phone.
+        /// </summary>
+        public bool HistoryLoaded { get; set; }
+
+        /// <summary>
+        /// Puts stored messages in FRONT of whatever arrived during this run.
+        ///
+        /// Not routed through Add: that is the path which writes to the store, and
+        /// re-saving what was just read would be pointless work. Messages already
+        /// present are skipped by id, because anything received this session has
+        /// been written to the file as well.
+        /// </summary>
+        public void InsertHistory(IList<XmppMessage> history)
+        {
+            if (history == null || history.Count == 0)
+            {
+                return;
+            }
+
+            HashSet<string> present = new HashSet<string>();
+            foreach (XmppMessage existing in Messages)
+            {
+                if (!string.IsNullOrEmpty(existing.Id))
+                {
+                    present.Add(existing.Id);
+                }
+            }
+
+            int at = 0;
+            for (int i = 0; i < history.Count; i++)
+            {
+                XmppMessage message = history[i];
+                if (message == null)
+                {
+                    continue;
+                }
+                if (!string.IsNullOrEmpty(message.Id) && present.Contains(message.Id))
+                {
+                    continue;
+                }
+                Messages.Insert(at, message);
+                at++;
+            }
+
+            if (string.IsNullOrEmpty(_lastMessage) && Messages.Count > 0)
+            {
+                LastMessage = Messages[Messages.Count - 1].Body;
+            }
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

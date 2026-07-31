@@ -83,6 +83,20 @@ namespace JabberAgent
                     return;
                 }
 
+                // The app already has a session: do not open a second one.
+                //
+                // Connecting as the "-bg" resource makes the account go available
+                // then unavailable on every run, and clients that collapse presence
+                // to the bare JID keep the last stanza - so the account shows as
+                // offline while the app is still connected. Nothing about the
+                // second session can prevent that broadcast, so the fix is not to
+                // make it. The app is connected anyway, so it receives, stores and
+                // notifies on its own; there is nothing here left to do.
+                if (SessionHeartbeat.IsAppSessionLive())
+                {
+                    return;
+                }
+
                 // A distinct resource, so this connection cannot collide with the
                 // foreground app's session if both happen to be up.
                 account.Resource = account.Resource + "-bg";
@@ -111,6 +125,14 @@ namespace JabberAgent
 
                 lock (received)
                 {
+                    // Store BEFORE notifying.
+                    //
+                    // This agent is the only thing that received these stanzas, so
+                    // the server now considers them delivered and will not hand
+                    // them to the app later. Without this write the toast would be
+                    // the only copy that ever existed and the message would be lost
+                    // for good the moment it was dismissed.
+                    store(received);
                     notify(received);
                 }
             }
@@ -135,8 +157,51 @@ namespace JabberAgent
         }
 
         /// <summary>
-        /// One toast per sender, plus the count on the tile. Per sender rather than per
-        /// message so catching up on a busy chat does not produce a wall of toasts.
+        /// Writes the drained messages to the history files, grouped so each
+        /// conversation is opened and rewritten once rather than once per message.
+        /// </summary>
+        private void store(List<XmppMessage> messages)
+        {
+            if (messages.Count == 0)
+            {
+                return;
+            }
+
+            Dictionary<string, List<XmppMessage>> byJid =
+                new Dictionary<string, List<XmppMessage>>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < messages.Count; i++)
+            {
+                XmppMessage message = messages[i];
+                if (message == null || string.IsNullOrEmpty(message.ContactJid))
+                {
+                    continue;
+                }
+                List<XmppMessage> list;
+                if (!byJid.TryGetValue(message.ContactJid, out list))
+                {
+                    list = new List<XmppMessage>();
+                    byJid[message.ContactJid] = list;
+                }
+                list.Add(message);
+            }
+
+            foreach (KeyValuePair<string, List<XmppMessage>> pair in byJid)
+            {
+                try
+                {
+                    MessageStore.AppendRange(pair.Key, pair.Value);
+                }
+                catch (Exception)
+                {
+                    // One unwritable conversation must not cost the others their
+                    // messages, nor stop the toasts going out.
+                }
+            }
+        }
+
+        /// <summary>
+        /// One toast per sender. Per sender rather than per message so catching up on
+        /// a busy chat does not produce a wall of toasts.
         /// </summary>
         private void notify(List<XmppMessage> messages)
         {
@@ -170,25 +235,6 @@ namespace JabberAgent
                 catch (Exception)
                 {
                 }
-            }
-
-            updateTile(messages.Count);
-        }
-
-        private void updateTile(int count)
-        {
-            try
-            {
-                IEnumerator<ShellTile> tiles = ShellTile.ActiveTiles.GetEnumerator();
-                if (tiles.MoveNext())
-                {
-                    FlipTileData data = new FlipTileData();
-                    data.Count = count;
-                    tiles.Current.Update(data);
-                }
-            }
-            catch (Exception)
-            {
             }
         }
     }

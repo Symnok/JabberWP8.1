@@ -11,7 +11,7 @@ Windows 10 Mobile.
 - Connect: TCP, STARTTLS, SASL PLAIN, resource binding, legacy session
 - Roster and live presence, with an availability dot per contact
 - Send and receive chat messages
-- Send pictures (from the library) via XEP-0363 HTTP upload
+- Send pictures (from the library or the camera) via XEP-0363 HTTP upload
 - Received image links render inline; any link in a message is tappable
 - Presence subscriptions in both directions: accept/decline incoming requests, and
   add a contact (which sends one)

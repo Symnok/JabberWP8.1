@@ -30,6 +30,9 @@ namespace JabberWP.Services
 
         private XmppConnection _connection;
 
+        /// <summary>Keeps the agent's "is the app connected?" answer fresh.</summary>
+        private System.Windows.Threading.DispatcherTimer _heartbeatTimer;
+
         /// <summary>JID of the XEP-0363 upload component, discovered once per session.</summary>
         private string _uploadService;
 
@@ -88,7 +91,54 @@ namespace JabberWP.Services
 
             // Only once there is a session worth keeping alive.
             LocationKeepAlive.Instance.Start();
+            StartHeartbeat();
             return null;
+        }
+
+        /// <summary>
+        /// Publishes "this app has a live session" for the background agent, which
+        /// skips its own connect while we are up. That second "-bg" resource is
+        /// what makes the account flicker offline in other clients.
+        /// </summary>
+        private void StartHeartbeat()
+        {
+            SessionHeartbeat.Beat();
+
+            if (_heartbeatTimer == null)
+            {
+                _heartbeatTimer = new System.Windows.Threading.DispatcherTimer();
+                // Well inside SessionHeartbeat.MAX_AGE, so an ordinary hiccup does
+                // not read as a dead app and let the agent connect anyway.
+                _heartbeatTimer.Interval = TimeSpan.FromSeconds(60);
+                _heartbeatTimer.Tick += OnHeartbeatTick;
+            }
+            if (!_heartbeatTimer.IsEnabled)
+            {
+                _heartbeatTimer.Start();
+            }
+        }
+
+        private void StopHeartbeat()
+        {
+            if (_heartbeatTimer != null && _heartbeatTimer.IsEnabled)
+            {
+                _heartbeatTimer.Stop();
+            }
+            // Cleared rather than left to expire: the agent should be free to run
+            // again the moment we are genuinely gone.
+            SessionHeartbeat.Clear();
+        }
+
+        private void OnHeartbeatTick(object sender, EventArgs e)
+        {
+            if (IsConnected)
+            {
+                SessionHeartbeat.Beat();
+            }
+            else
+            {
+                StopHeartbeat();
+            }
         }
 
         /// <summary>
@@ -120,6 +170,10 @@ namespace JabberWP.Services
             {
                 return;
             }
+
+            // Before the await: our session is over from here on, and the agent
+            // should be free to take over without waiting out the timeout.
+            StopHeartbeat();
 
             XmppConnection connection = _connection;
             Detach();
@@ -155,7 +209,23 @@ namespace JabberWP.Services
             if (message != null)
             {
                 chat.Add(message);
+                Store(chat.Jid, message);
             }
+        }
+
+        /// <summary>
+        /// Writes one message to the history file, off the UI thread.
+        ///
+        /// A save is a read-modify-write of the whole conversation file, which is
+        /// far too much to do on the dispatcher for every message. Order does not
+        /// matter: MessageStore sorts by timestamp when it reads.
+        /// </summary>
+        private static void Store(string bareJid, XmppMessage message)
+        {
+            Task ignored = Task.Run(delegate
+            {
+                MessageStore.Append(bareJid, message);
+            });
         }
 
         /// <summary>
@@ -264,6 +334,7 @@ namespace JabberWP.Services
             }
 
             chat.Add(message);
+            Store(chat.Jid, message);
             return null;
         }
 
@@ -346,6 +417,7 @@ namespace JabberWP.Services
                 }
 
                 chat.Add(message);
+                Store(chat.Jid, message);
                 if (!string.Equals(ActiveChatJid, chat.Jid, StringComparison.OrdinalIgnoreCase))
                 {
                     chat.Unread = chat.Unread + 1;

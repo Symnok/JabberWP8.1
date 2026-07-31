@@ -57,6 +57,16 @@ namespace JabberWP.Pages
             AppState.Instance.ActiveChatJid = _chat.Jid;
             _chat.Unread = 0;
 
+            // Read stored history once per conversation, before the list is bound,
+            // so the messages are already in place and no scroll jump is visible.
+            // Lazy on purpose: the roster creates a Chat for every contact, and
+            // loading all of their files at startup is exactly the cost this avoids.
+            if (!_chat.HistoryLoaded)
+            {
+                _chat.HistoryLoaded = true;
+                _chat.InsertHistory(MessageStore.Load(_chat.Jid));
+            }
+
             name_tblck.Text = _chat.Jid;
             presence_tblck.Text = _chat.PresenceText;
             messages_lstb.ItemsSource = _chat.Messages;

@@ -121,6 +121,12 @@
     <Compile Include="..\JabberWP\Core\XmppStreamParser.cs">
       <Link>Core\XmppStreamParser.cs</Link>
     </Compile>
+    <Compile Include="..\JabberWP\Services\MessageStore.cs">
+      <Link>Services\MessageStore.cs</Link>
+    </Compile>
+    <Compile Include="..\JabberWP\Services\SessionHeartbeat.cs">
+      <Link>Services\SessionHeartbeat.cs</Link>
+    </Compile>
     <Compile Include="..\JabberWP\Services\AccountStore.cs">
       <Link>Services\AccountStore.cs</Link>
     </Compile>

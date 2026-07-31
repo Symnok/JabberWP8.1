@@ -136,6 +136,8 @@
     <Compile Include="Services\AppState.cs" />
     <Compile Include="Services\BackgroundAgentHelper.cs" />
     <Compile Include="Services\LocationKeepAlive.cs" />
+    <Compile Include="Services\MessageStore.cs" />
+    <Compile Include="Services\SessionHeartbeat.cs" />
     <Compile Include="Services\ToastHelper.cs" />
   </ItemGroup>
   <ItemGroup>
